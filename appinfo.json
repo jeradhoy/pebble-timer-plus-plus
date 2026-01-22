@@ -1,8 +1,8 @@
 {
   "uuid": "17bf83aa-88a9-459a-a6e5-60aa60e1dc07",
-  "shortName": "Timer+",
-  "longName": "Timer+",
-  "companyName": "Ycleptic Studios",
+  "shortName": "Timer++",
+  "longName": "Timer++",
+  "companyName": "Jerad Hoy",
   "versionLabel": "4.2",
   "sdkVersion": "3",
   "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],

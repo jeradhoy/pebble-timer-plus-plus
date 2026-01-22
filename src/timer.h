@@ -10,6 +10,51 @@
 
 #include <pebble.h>
 
+#define SNOOZE_INCREMENT_MS (MSEC_IN_MIN * 5)
+
+// Timer slots
+#define TIMER_SLOT_COUNT 5
+
+// Pomodoro defaults
+#define POMODORO_DEFAULT_WORK_MS  (25 * MSEC_IN_MIN)
+#define POMODORO_DEFAULT_BREAK_MS (5 * MSEC_IN_MIN)
+
+// Main data structure
+typedef struct {
+  int64_t     length_ms;      //< Length of timer in milliseconds
+  int64_t     start_ms;       //< The start epoch of the timer in milliseconds
+  int64_t     base_length_ms; //< Used to track the original timer value (for later repeating).
+  bool        elapsed;        //< Used to start the vibration if first time as elapsed
+  bool        can_vibrate;    //< Flag used to tell when the timer has completed
+  bool        reset_on_init;  //< Flag to indicate if the timer should be reset on next initialization
+  int8_t      auto_snooze_count; //< Count of how many times the timer has auto-snoozed
+  bool        is_repeating;   //< A flag to indicate that the timer is in repeat mode
+  uint8_t     repeat_count;   //< A counter to track the number of times the timer has repeated
+} Timer;
+extern Timer timer_data;
+
+// Stored timer slot
+typedef struct {
+  int64_t length_ms;    //< Timer duration in milliseconds
+} TimerSlot;
+
+// Timer slots data
+typedef struct {
+  TimerSlot slots[TIMER_SLOT_COUNT];
+  uint8_t   selected_slot;  //< Currently highlighted slot (0-4)
+} TimerSlotsData;
+extern TimerSlotsData timer_slots_data;
+
+// Pomodoro timer configuration
+typedef struct {
+  int64_t work_time_ms;      //< Work duration (default: 25 min)
+  int64_t break_time_ms;     //< Break duration (default: 5 min)
+  bool    is_work_phase;     //< true = work, false = break
+  uint8_t completed_cycles;  //< Number of completed work periods
+  bool    is_active;         //< Whether pomodoro mode is active
+} PomodoroData;
+extern PomodoroData pomodoro_data;
+
 
 //! Get timer value
 //! @param hr A pointer to where to store the hour value of the timer
@@ -44,11 +89,18 @@ void timer_check_elapsed(void);
 //! @param increment The amount to increment by
 void timer_increment(int64_t increment);
 
+//! Increment stopwatch (chrono) value currently being edited by adjusting start time
+//! @param increment The amount to increment by
+void timer_increment_chrono(int64_t increment);
+
 //! Toggle play pause state for timer
 void timer_toggle_play_pause(void);
 
 //! Rewind the timer back to its original value
 void timer_rewind(void);
+
+//! Restart the timer from its original value
+void timer_restart(void);
 
 //! Reset the timer to zero
 void timer_reset(void);
@@ -58,3 +110,23 @@ void timer_persist_store(void);
 
 //! Read the timer from persistent storage
 void timer_persist_read(void);
+
+//! Reset the auto snooze count
+void timer_reset_auto_snooze(void);
+
+// Timer slots functions
+//! Save current timer to a slot
+void timer_slots_save_current(uint8_t slot_index);
+
+//! Load a timer from a slot
+void timer_slots_load(uint8_t slot_index);
+
+// Pomodoro functions
+//! Start pomodoro mode
+void pomodoro_start(void);
+
+//! Stop pomodoro mode
+void pomodoro_stop(void);
+
+//! Handle timer completion in pomodoro mode (switch phases)
+void pomodoro_handle_timer_complete(void);

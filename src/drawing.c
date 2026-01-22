@@ -375,10 +375,223 @@ void drawing_start_reset_animation(void) {
     FOCUS_FIELD_SHRINK_DURATION, BUTTON_HOLD_RESET_MS, CurveLinear);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Setup Menu Rendering
+//
+
+// Render setup menu (POMODORO / RESET / SAVED)
+static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
+  ControlMode mode = main_get_control_mode();
+  if (mode != ControlModeSetupMenu) return;
+
+  SetupPosition pos = main_get_setup_position();
+  int16_t center_y = bounds.size.h / 2;
+  int16_t item_height = 40;
+  int16_t text_y_offset = 8;
+
+  // Draw three menu items
+  const char *items[] = {"POMODORO", "RESET", "SAVED"};
+  int16_t positions[] = {center_y - item_height - 10, center_y - item_height/2 + 5, center_y + 20};
+  SetupPosition highlights[] = {SetupPositionPomodoro, SetupPositionCenter, SetupPositionSlots};
+
+  for (int i = 0; i < 3; i++) {
+    GRect item_rect = GRect(10, positions[i], bounds.size.w - 20, item_height);
+
+    // Highlight selected item
+    if (pos == highlights[i]) {
+      graphics_context_set_fill_color(ctx, GColorWhite);
+      graphics_fill_rect(ctx, item_rect, 4, GCornersAll);
+      graphics_context_set_text_color(ctx, GColorBlack);
+    } else {
+      graphics_context_set_text_color(ctx, GColorWhite);
+    }
+
+    // Draw text
+    GRect text_rect = GRect(item_rect.origin.x, item_rect.origin.y + text_y_offset,
+                            item_rect.size.w, item_rect.size.h);
+    graphics_draw_text(ctx, items[i], fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+                       text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
+}
+
+// Render slot selection menu
+static void prv_render_slot_menu(GContext *ctx, GRect bounds) {
+  ControlMode mode = main_get_control_mode();
+  if (mode != ControlModeSlotSelect) return;
+
+  int16_t item_height = 30;
+  int16_t start_y = 15;
+
+  // Title
+  graphics_context_set_text_color(ctx, GColorWhite);
+  GRect title_rect = GRect(0, start_y, bounds.size.w, 25);
+  graphics_draw_text(ctx, "SAVED TIMERS", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+                     title_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+  start_y += 30;
+
+  // Count filled slots
+  int filled_count = 0;
+  for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
+    if (timer_slots_data.slots[i].length_ms > 0) {
+      filled_count++;
+    }
+  }
+
+  // Draw filled slots
+  int row = 0;
+  for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
+    if (timer_slots_data.slots[i].length_ms > 0) {
+      GRect item_rect = GRect(15, start_y + row * item_height, bounds.size.w - 30, item_height - 2);
+
+      // Highlight selected slot
+      if (row == timer_slots_data.selected_slot) {
+        graphics_context_set_fill_color(ctx, GColorWhite);
+        graphics_fill_rect(ctx, item_rect, 3, GCornersAll);
+        graphics_context_set_text_color(ctx, GColorBlack);
+      } else {
+        graphics_context_set_text_color(ctx, GColorWhite);
+      }
+
+      // Format slot text
+      char slot_text[20];
+      int64_t ms = timer_slots_data.slots[i].length_ms;
+      int min = (ms / MSEC_IN_MIN) % 60;
+      int sec = (ms / MSEC_IN_SEC) % 60;
+      int hr = ms / MSEC_IN_HR;
+      if (hr > 0) {
+        snprintf(slot_text, sizeof(slot_text), "%d:%02d:%02d", hr, min, sec);
+      } else {
+        snprintf(slot_text, sizeof(slot_text), "%02d:%02d", min, sec);
+      }
+
+      GRect text_rect = GRect(item_rect.origin.x + 5, item_rect.origin.y + 3,
+                              item_rect.size.w - 10, item_rect.size.h);
+      graphics_draw_text(ctx, slot_text, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+                         text_rect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+      row++;
+    }
+  }
+
+  // Draw "+ Add New" if there's room
+  if (filled_count < TIMER_SLOT_COUNT) {
+    GRect item_rect = GRect(15, start_y + row * item_height, bounds.size.w - 30, item_height - 2);
+
+    // Highlight if selected
+    if (row == timer_slots_data.selected_slot) {
+      graphics_context_set_fill_color(ctx, GColorWhite);
+      graphics_fill_rect(ctx, item_rect, 3, GCornersAll);
+      graphics_context_set_text_color(ctx, GColorBlack);
+    } else {
+      graphics_context_set_text_color(ctx, GColorWhite);
+    }
+
+    GRect text_rect = GRect(item_rect.origin.x + 5, item_rect.origin.y + 3,
+                            item_rect.size.w - 10, item_rect.size.h);
+    graphics_draw_text(ctx, "+ Add New", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+                       text_rect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  }
+}
+
+// Render pomodoro configuration menu
+static void prv_render_pomodoro_menu(GContext *ctx, GRect bounds) {
+  ControlMode mode = main_get_control_mode();
+  if (mode != ControlModePomodoroMenu &&
+      mode != ControlModePomodoroEditWork &&
+      mode != ControlModePomodoroEditBreak) return;
+
+  int16_t center_y = bounds.size.h / 2;
+
+  // Title
+  graphics_context_set_text_color(ctx, GColorWhite);
+  GRect title_rect = GRect(0, 20, bounds.size.w, 25);
+  graphics_draw_text(ctx, "POMODORO", fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+                     title_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+  // Work time
+  char work_text[20];
+  int work_min = pomodoro_data.work_time_ms / MSEC_IN_MIN;
+  snprintf(work_text, sizeof(work_text), "Work: %d min", work_min);
+
+  GRect work_rect = GRect(20, center_y - 30, bounds.size.w - 40, 35);
+  if (mode == ControlModePomodoroEditWork) {
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_fill_rect(ctx, work_rect, 4, GCornersAll);
+    graphics_context_set_text_color(ctx, GColorBlack);
+  } else {
+    graphics_context_set_text_color(ctx, GColorWhite);
+  }
+  graphics_draw_text(ctx, work_text, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+                     GRect(work_rect.origin.x, work_rect.origin.y + 4, work_rect.size.w, work_rect.size.h),
+                     GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+  // Break time
+  char break_text[20];
+  int break_min = pomodoro_data.break_time_ms / MSEC_IN_MIN;
+  snprintf(break_text, sizeof(break_text), "Break: %d min", break_min);
+
+  GRect break_rect = GRect(20, center_y + 15, bounds.size.w - 40, 35);
+  if (mode == ControlModePomodoroEditBreak) {
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_fill_rect(ctx, break_rect, 4, GCornersAll);
+    graphics_context_set_text_color(ctx, GColorBlack);
+  } else {
+    graphics_context_set_text_color(ctx, GColorWhite);
+  }
+  graphics_draw_text(ctx, break_text, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+                     GRect(break_rect.origin.x, break_rect.origin.y + 4, break_rect.size.w, break_rect.size.h),
+                     GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+  // Hint at bottom
+  graphics_context_set_text_color(ctx, GColorLightGray);
+  GRect hint_rect = GRect(0, bounds.size.h - 30, bounds.size.w, 25);
+  graphics_draw_text(ctx, "SELECT to start", fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                     hint_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+}
+
+// Render pomodoro indicator during active timer
+static void prv_render_pomodoro_indicator(GContext *ctx, GRect bounds) {
+  if (!pomodoro_data.is_active) return;
+
+  // Draw WORK or BREAK indicator at top
+  const char *phase_text = pomodoro_data.is_work_phase ? "WORK" : "BREAK";
+  graphics_context_set_text_color(ctx, drawing_data.fore_color);
+  GRect phase_rect = GRect(5, 5, 60, 20);
+  graphics_draw_text(ctx, phase_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                     phase_rect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+
+  // Draw cycle count at top right
+  char cycle_text[10];
+  snprintf(cycle_text, sizeof(cycle_text), "x%d", pomodoro_data.completed_cycles);
+  GRect cycle_rect = GRect(bounds.size.w - 40, 5, 35, 20);
+  graphics_draw_text(ctx, cycle_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                     cycle_rect, GTextOverflowModeFill, GTextAlignmentRight, NULL);
+}
+
 // Render everything to the screen
 void drawing_render(Layer *layer, GContext *ctx) {
   // get properties
   GRect bounds = layer_get_bounds(layer);
+
+  // Check if we're in a menu mode
+  ControlMode mode = main_get_control_mode();
+  if (mode == ControlModeSetupMenu ||
+      mode == ControlModeSlotSelect ||
+      mode == ControlModePomodoroMenu ||
+      mode == ControlModePomodoroEditWork ||
+      mode == ControlModePomodoroEditBreak) {
+    // Draw black background for menus
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+
+    // Render the appropriate menu
+    prv_render_setup_menu(ctx, bounds);
+    prv_render_slot_menu(ctx, bounds);
+    prv_render_pomodoro_menu(ctx, bounds);
+    return;
+  }
+
+  // Normal timer rendering
   // draw background
   // this is actually the ring, which is then covered up with the background
   graphics_context_set_fill_color(ctx, drawing_data.ring_color);
@@ -401,6 +614,8 @@ void drawing_render(Layer *layer, GContext *ctx) {
   graphics_context_set_text_color(ctx, drawing_data.fore_color);
   prv_render_header_text(ctx, bounds);
   prv_render_footer_text(ctx, bounds);
+  // draw pomodoro indicator if active
+  prv_render_pomodoro_indicator(ctx, bounds);
 }
 
 // Update the drawing states and recalculate everythings positions

@@ -10,13 +10,17 @@
 
 #include "timer.h"
 #include "utility.h"
+#include <string.h>
 
-#define PERSIST_VERSION 2
+#define PERSIST_VERSION 4
 #define PERSIST_VERSION_KEY 4342896
-#define PERSIST_TIMER_KEY 58734
-#define VIBRATION_LENGTH_MS 20000
+#define PERSIST_TIMER_KEY_V2_DATA 58734
+#define PERSIST_TIMER_KEY 58736
+#define PERSIST_SLOTS_KEY 58740
+#define PERSIST_POMODORO_KEY 58741
+#define VIBRATION_LENGTH_MS 30000
 // legacy persistent storage
-#define PERSIST_TIMER_KEY_V2 3456
+#define PERSIST_TIMER_KEY_V1_LEGACY 3456
 
 // Vibration sequence
 static const uint32_t vibe_sequence[] = {150, 200, 300};
@@ -26,13 +30,13 @@ static const VibePattern vibe_pattern = {
 };
 
 // Main data structure
-typedef struct {
-  int64_t     length_ms;      //< Length of timer in milliseconds
-  int64_t     start_ms;       //< The start epoch of the timer in milliseconds
-  bool        elapsed;        //< Used to start the vibration if first time as elapsed
-  bool        can_vibrate;    //< Flag used to tell when the timer has completed
-} Timer;
 Timer timer_data;
+
+// Timer slots data
+TimerSlotsData timer_slots_data;
+
+// Pomodoro data
+PomodoroData pomodoro_data;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -84,12 +88,29 @@ bool timer_is_paused(void) {
 // Check if the timer is elapsed and vibrate if this is the first call after elapsing
 void timer_check_elapsed(void) {
   if (timer_is_chrono() && !timer_is_paused() && timer_data.can_vibrate) {
+    // Check for pomodoro mode first
+    if (pomodoro_data.is_active) {
+      pomodoro_handle_timer_complete();
+      vibes_long_pulse();
+      return;
+    }
+    if (timer_data.is_repeating && timer_data.repeat_count > 1) {
+      timer_data.repeat_count--;
+      timer_increment(timer_data.base_length_ms);
+      vibes_long_pulse(); // Vibrate briefly on repeat
+      return;
+    }
     // stop vibration after certain duration
     if (timer_get_value_ms() > VIBRATION_LENGTH_MS) {
       timer_data.can_vibrate = false;
+      if (timer_data.auto_snooze_count < 5) {
+        timer_data.auto_snooze_count++;
+        timer_increment(SNOOZE_INCREMENT_MS);
+      }
+    } else {
+      // vibrate
+      vibes_enqueue_custom_pattern(vibe_pattern);
     }
-    // vibrate
-    vibes_enqueue_custom_pattern(vibe_pattern);
   }
 }
 
@@ -131,6 +152,12 @@ void timer_increment(int64_t increment) {
   }
 }
 
+// Increment stopwatch (chrono) value currently being edited by adjusting start time
+void timer_increment_chrono(int64_t increment) {
+  // adjust start time to effectively add time to the stopwatch
+  timer_data.start_ms -= increment;
+}
+
 // Toggle play pause state for timer
 void timer_toggle_play_pause(void) {
   if (timer_data.start_ms > 0) {
@@ -142,42 +169,188 @@ void timer_toggle_play_pause(void) {
 
 //! Rewind the timer back to its original value
 void timer_rewind(void) {
-  timer_data.start_ms = 0;
+  timer_data.start_ms = 0;  // this also pauses the timer
   // enable vibration
   if (timer_data.length_ms) {
     timer_data.can_vibrate = true;
   }
 }
 
+// Restart the timer from its original value
+void timer_restart(void) {
+  if (timer_data.base_length_ms > 0) {
+      // Countdown: restore to base length
+      timer_data.length_ms = timer_data.base_length_ms;
+  } else {
+      // Chrono: reset to 0
+      timer_data.length_ms = 0;
+  }
+
+  if (timer_is_paused()) {
+      // If paused, remain paused (start_ms <= 0 means paused)
+      timer_data.start_ms = 0;
+  } else {
+      // If running, restart running from now
+      timer_data.start_ms = epoch();
+  }
+
+  // enable vibration if length > 0
+  if (timer_data.length_ms > 0) {
+    timer_data.can_vibrate = true;
+  } else {
+    timer_data.can_vibrate = false;
+  }
+
+  timer_data.auto_snooze_count = 0;
+}
+
 // Reset the timer to zero
 void timer_reset(void) {
   timer_data.length_ms = 0;
-  timer_data.start_ms = 0;
+  timer_data.base_length_ms = 0;
+  timer_data.start_ms = 0;  // Paused state
   // disable vibration
   timer_data.can_vibrate = false;
+  timer_data.auto_snooze_count = 0;
+  timer_data.is_repeating = false;
+  timer_data.repeat_count = 0;
 }
 
 // Save the timer to persistent storage
 void timer_persist_store(void) {
-  // write out current persistent data version for potential future reference
+// write out current persistent data version
   persist_write_int(PERSIST_VERSION_KEY, PERSIST_VERSION);
+  // Always write to the new V3 key
   persist_write_data(PERSIST_TIMER_KEY, &timer_data, sizeof(timer_data));
+  // Save slots and pomodoro data
+  persist_write_data(PERSIST_SLOTS_KEY, &timer_slots_data, sizeof(timer_slots_data));
+  persist_write_data(PERSIST_POMODORO_KEY, &pomodoro_data, sizeof(pomodoro_data));
+
+  // Clean up old keys if they still exist
+  if (persist_exists(PERSIST_TIMER_KEY_V2_DATA)) {
+    persist_delete(PERSIST_TIMER_KEY_V2_DATA);
+  }
+  if (persist_exists(PERSIST_TIMER_KEY_V1_LEGACY)) {
+    persist_delete(PERSIST_TIMER_KEY_V1_LEGACY);
+  }
+}
+
+// Reset the auto snooze count
+void timer_reset_auto_snooze(void) {
+  timer_data.auto_snooze_count = 0;
 }
 
 // Read the timer from persistent storage
 void timer_persist_read(void) {
-  // read legacy version
-  if (persist_exists(PERSIST_TIMER_KEY_V2)) {
-    persist_delete(PERSIST_TIMER_KEY_V2);
-    if (launch_reason() == APP_LAUNCH_WAKEUP) {
-      timer_increment(5000);
-      timer_toggle_play_pause();
-    }
+  // --- Destructive Update Logic ---
+  // 1. If the old V2 key exists, delete it.
+  if (persist_exists(PERSIST_TIMER_KEY_V2_DATA)) {
+    persist_delete(PERSIST_TIMER_KEY_V2_DATA);
   }
-  // read current version
+  // 2. If the old V1 key exists, delete it.
+  if (persist_exists(PERSIST_TIMER_KEY_V1_LEGACY)) {
+    persist_delete(PERSIST_TIMER_KEY_V1_LEGACY);
+  }
+
+  // --- Now, just try to load the new (V3) data ---
   if (persist_exists(PERSIST_TIMER_KEY)) {
+    // User has run the new app before, load their new V3 data
     persist_read_data(PERSIST_TIMER_KEY, &timer_data, sizeof(timer_data));
   } else {
+    // First time running V3 (or no data saved), reset to default
     timer_reset();
   }
+
+  // Load timer slots
+  if (persist_exists(PERSIST_SLOTS_KEY)) {
+    persist_read_data(PERSIST_SLOTS_KEY, &timer_slots_data, sizeof(timer_slots_data));
+  } else {
+    memset(&timer_slots_data, 0, sizeof(timer_slots_data));
+  }
+
+  // Load pomodoro settings
+  if (persist_exists(PERSIST_POMODORO_KEY)) {
+    persist_read_data(PERSIST_POMODORO_KEY, &pomodoro_data, sizeof(pomodoro_data));
+  } else {
+    pomodoro_data.work_time_ms = POMODORO_DEFAULT_WORK_MS;
+    pomodoro_data.break_time_ms = POMODORO_DEFAULT_BREAK_MS;
+    pomodoro_data.is_work_phase = true;
+    pomodoro_data.completed_cycles = 0;
+    pomodoro_data.is_active = false;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Timer Slots Functions
+//
+
+// Save current timer to a slot
+void timer_slots_save_current(uint8_t slot_index) {
+  if (slot_index < TIMER_SLOT_COUNT) {
+    timer_slots_data.slots[slot_index].length_ms = timer_data.length_ms;
+    persist_write_data(PERSIST_SLOTS_KEY, &timer_slots_data, sizeof(timer_slots_data));
+  }
+}
+
+// Load a timer from a slot
+void timer_slots_load(uint8_t slot_index) {
+  if (slot_index < TIMER_SLOT_COUNT && timer_slots_data.slots[slot_index].length_ms > 0) {
+    timer_data.length_ms = timer_slots_data.slots[slot_index].length_ms;
+    timer_data.base_length_ms = timer_slots_data.slots[slot_index].length_ms;
+    timer_data.start_ms = 0;  // Paused state
+    timer_data.can_vibrate = true;
+    timer_data.auto_snooze_count = 0;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Pomodoro Functions
+//
+
+// Start pomodoro mode
+void pomodoro_start(void) {
+  pomodoro_data.is_active = true;
+  pomodoro_data.is_work_phase = true;
+  pomodoro_data.completed_cycles = 0;
+
+  // Set timer to work duration
+  timer_data.length_ms = pomodoro_data.work_time_ms;
+  timer_data.base_length_ms = pomodoro_data.work_time_ms;
+  timer_data.start_ms = epoch();
+  timer_data.can_vibrate = true;
+  timer_data.auto_snooze_count = 0;
+
+  // Save pomodoro settings
+  persist_write_data(PERSIST_POMODORO_KEY, &pomodoro_data, sizeof(pomodoro_data));
+}
+
+// Stop pomodoro mode
+void pomodoro_stop(void) {
+  pomodoro_data.is_active = false;
+  persist_write_data(PERSIST_POMODORO_KEY, &pomodoro_data, sizeof(pomodoro_data));
+}
+
+// Handle timer completion in pomodoro mode (switch phases)
+void pomodoro_handle_timer_complete(void) {
+  if (!pomodoro_data.is_active) return;
+
+  if (pomodoro_data.is_work_phase) {
+    // Work phase complete, start break
+    pomodoro_data.is_work_phase = false;
+    pomodoro_data.completed_cycles++;
+
+    timer_data.length_ms = pomodoro_data.break_time_ms;
+    timer_data.base_length_ms = pomodoro_data.break_time_ms;
+  } else {
+    // Break phase complete, start work
+    pomodoro_data.is_work_phase = true;
+
+    timer_data.length_ms = pomodoro_data.work_time_ms;
+    timer_data.base_length_ms = pomodoro_data.work_time_ms;
+  }
+
+  // Restart timer
+  timer_data.start_ms = epoch();
+  timer_data.can_vibrate = true;
+  timer_data.auto_snooze_count = 0;
 }

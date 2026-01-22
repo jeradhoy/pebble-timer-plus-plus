@@ -14,12 +14,31 @@
 
 // Current control mode
 typedef enum {
+  ControlModeNew,
   ControlModeEditHr,
   ControlModeEditMin,
   ControlModeEditSec,
-  ControlModeCounting
+  ControlModeCounting,
+  ControlModeEditRepeat,
+  // Setup menu modes
+  ControlModeSetupMenu,         // In setup mode, scrolling between options
+  ControlModeSlotSelect,        // Selecting stored timer slot
+  ControlModePomodoroMenu,      // Pomodoro work/break selection
+  ControlModePomodoroEditWork,  // Editing pomodoro work time
+  ControlModePomodoroEditBreak  // Editing pomodoro break time
 } ControlMode;
+
+// Setup menu position
+typedef enum {
+  SetupPositionCenter,    // Default - reset option
+  SetupPositionPomodoro,  // UP - Pomodoro settings
+  SetupPositionSlots      // DOWN - Stored timer slots
+} SetupPosition;
 
 //! Get the current control mode of the app
 //! @return The current ControlMode
 ControlMode main_get_control_mode(void);
+
+//! Get the current setup position
+//! @return The current SetupPosition
+SetupPosition main_get_setup_position(void);
