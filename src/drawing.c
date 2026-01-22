@@ -999,8 +999,8 @@ void drawing_initialize(Layer *layer) {
   };
   // set the colors
   drawing_data.fore_color = GColorBlack;
-  drawing_data.mid_color = PBL_IF_COLOR_ELSE(GColorMintGreen, GColorWhite);
-  drawing_data.ring_color = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
+  drawing_data.mid_color = PBL_IF_COLOR_ELSE(GColorCeleste, GColorWhite);
+  drawing_data.ring_color = PBL_IF_COLOR_ELSE(GColorVividCerulean, GColorWhite);
   drawing_data.back_color = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack);
   // set animation update callback
   animation_register_update_callback(&prv_animation_update_callback);
