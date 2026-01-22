@@ -15,6 +15,9 @@
 // Timer slots
 #define TIMER_SLOT_COUNT 5
 
+// Pomodoro slots
+#define POMODORO_SLOT_COUNT 5
+
 // Pomodoro defaults
 #define POMODORO_DEFAULT_WORK_MS  (25 * MSEC_IN_MIN)
 #define POMODORO_DEFAULT_BREAK_MS (5 * MSEC_IN_MIN)
@@ -45,7 +48,19 @@ typedef struct {
 } TimerSlotsData;
 extern TimerSlotsData timer_slots_data;
 
-// Pomodoro timer configuration
+// Stored pomodoro slot (work/break pair)
+typedef struct {
+  int64_t work_time_ms;   //< Work duration in milliseconds
+  int64_t break_time_ms;  //< Break duration in milliseconds
+} PomodoroSlot;
+
+// Pomodoro slots data
+typedef struct {
+  PomodoroSlot slots[POMODORO_SLOT_COUNT];
+} PomodoroSlotsData;
+extern PomodoroSlotsData pomodoro_slots_data;
+
+// Pomodoro timer configuration (runtime state)
 typedef struct {
   int64_t work_time_ms;      //< Work duration (default: 25 min)
   int64_t break_time_ms;     //< Break duration (default: 5 min)
@@ -133,3 +148,22 @@ void pomodoro_stop(void);
 
 //! Handle timer completion in pomodoro mode (switch phases)
 void pomodoro_handle_timer_complete(void);
+
+// Pomodoro slots functions
+//! Save pomodoro to a slot
+void pomodoro_slots_save(uint8_t slot_index, int64_t work_ms, int64_t break_ms);
+
+//! Load and start a pomodoro from a slot
+void pomodoro_slots_load(uint8_t slot_index);
+
+//! Delete a pomodoro from a slot
+void pomodoro_slots_delete(uint8_t slot_index);
+
+//! Count filled pomodoro slots
+uint8_t pomodoro_slots_count_filled(void);
+
+//! Get slot index for selection (skipping empty slots)
+int8_t pomodoro_slots_get_index_for_selection(uint8_t selection);
+
+//! Get first empty pomodoro slot
+int8_t pomodoro_slots_get_first_empty(void);

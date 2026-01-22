@@ -18,6 +18,7 @@
 #define PERSIST_TIMER_KEY 58736
 #define PERSIST_SLOTS_KEY 58740
 #define PERSIST_POMODORO_KEY 58741
+#define PERSIST_POMODORO_SLOTS_KEY 58742
 #define VIBRATION_LENGTH_MS 30000
 // legacy persistent storage
 #define PERSIST_TIMER_KEY_V1_LEGACY 3456
@@ -34,6 +35,9 @@ Timer timer_data;
 
 // Timer slots data
 TimerSlotsData timer_slots_data;
+
+// Pomodoro slots data
+PomodoroSlotsData pomodoro_slots_data;
 
 // Pomodoro data
 PomodoroData pomodoro_data;
@@ -225,6 +229,7 @@ void timer_persist_store(void) {
   // Save slots and pomodoro data
   persist_write_data(PERSIST_SLOTS_KEY, &timer_slots_data, sizeof(timer_slots_data));
   persist_write_data(PERSIST_POMODORO_KEY, &pomodoro_data, sizeof(pomodoro_data));
+  persist_write_data(PERSIST_POMODORO_SLOTS_KEY, &pomodoro_slots_data, sizeof(pomodoro_slots_data));
 
   // Clean up old keys if they still exist
   if (persist_exists(PERSIST_TIMER_KEY_V2_DATA)) {
@@ -277,6 +282,13 @@ void timer_persist_read(void) {
     pomodoro_data.is_work_phase = true;
     pomodoro_data.completed_cycles = 0;
     pomodoro_data.is_active = false;
+  }
+
+  // Load pomodoro slots
+  if (persist_exists(PERSIST_POMODORO_SLOTS_KEY)) {
+    persist_read_data(PERSIST_POMODORO_SLOTS_KEY, &pomodoro_slots_data, sizeof(pomodoro_slots_data));
+  } else {
+    memset(&pomodoro_slots_data, 0, sizeof(pomodoro_slots_data));
   }
 }
 
@@ -361,4 +373,73 @@ void pomodoro_handle_timer_complete(void) {
   timer_data.start_ms = epoch();
   timer_data.can_vibrate = true;
   timer_data.auto_snooze_count = 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Pomodoro Slots Functions
+//
+
+// Save pomodoro to a slot
+void pomodoro_slots_save(uint8_t slot_index, int64_t work_ms, int64_t break_ms) {
+  if (slot_index < POMODORO_SLOT_COUNT) {
+    pomodoro_slots_data.slots[slot_index].work_time_ms = work_ms;
+    pomodoro_slots_data.slots[slot_index].break_time_ms = break_ms;
+    persist_write_data(PERSIST_POMODORO_SLOTS_KEY, &pomodoro_slots_data, sizeof(pomodoro_slots_data));
+  }
+}
+
+// Load and start a pomodoro from a slot
+void pomodoro_slots_load(uint8_t slot_index) {
+  if (slot_index < POMODORO_SLOT_COUNT &&
+      pomodoro_slots_data.slots[slot_index].work_time_ms > 0) {
+    // Set pomodoro data from slot
+    pomodoro_data.work_time_ms = pomodoro_slots_data.slots[slot_index].work_time_ms;
+    pomodoro_data.break_time_ms = pomodoro_slots_data.slots[slot_index].break_time_ms;
+    // Start the pomodoro
+    pomodoro_start();
+  }
+}
+
+// Delete a pomodoro from a slot
+void pomodoro_slots_delete(uint8_t slot_index) {
+  if (slot_index < POMODORO_SLOT_COUNT) {
+    pomodoro_slots_data.slots[slot_index].work_time_ms = 0;
+    pomodoro_slots_data.slots[slot_index].break_time_ms = 0;
+    persist_write_data(PERSIST_POMODORO_SLOTS_KEY, &pomodoro_slots_data, sizeof(pomodoro_slots_data));
+  }
+}
+
+// Count filled pomodoro slots
+uint8_t pomodoro_slots_count_filled(void) {
+  uint8_t count = 0;
+  for (int i = 0; i < POMODORO_SLOT_COUNT; i++) {
+    if (pomodoro_slots_data.slots[i].work_time_ms > 0) {
+      count++;
+    }
+  }
+  return count;
+}
+
+// Get slot index for selection (skipping empty slots)
+int8_t pomodoro_slots_get_index_for_selection(uint8_t selection) {
+  uint8_t count = 0;
+  for (int i = 0; i < POMODORO_SLOT_COUNT; i++) {
+    if (pomodoro_slots_data.slots[i].work_time_ms > 0) {
+      if (count == selection) {
+        return i;
+      }
+      count++;
+    }
+  }
+  return -1;
+}
+
+// Get first empty pomodoro slot
+int8_t pomodoro_slots_get_first_empty(void) {
+  for (int i = 0; i < POMODORO_SLOT_COUNT; i++) {
+    if (pomodoro_slots_data.slots[i].work_time_ms == 0) {
+      return i;
+    }
+  }
+  return -1;
 }

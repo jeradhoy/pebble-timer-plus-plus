@@ -380,46 +380,100 @@ void drawing_start_reset_animation(void) {
 //
 
 // Helper to get menu item text for a given index
+// Negative indices = pomodoro section, 0 = Reset, positive = timer section
 // Returns false if index is out of range
-static bool prv_get_menu_item_text(int8_t index, char *buffer, size_t buf_size, int filled_count) {
-  bool has_add_new = (filled_count < TIMER_SLOT_COUNT);
-  int8_t max_index = filled_count + (has_add_new ? 1 : 0);
+static bool prv_get_menu_item_text(int8_t index, char *buffer, size_t buf_size) {
+  uint8_t filled_timers = 0;
+  for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
+    if (timer_slots_data.slots[i].length_ms > 0) filled_timers++;
+  }
+  uint8_t filled_pomodoros = pomodoro_slots_count_filled();
 
-  if (index < 0 || index > max_index) {
+  bool has_add_timer = (filled_timers < TIMER_SLOT_COUNT);
+  bool has_add_pomodoro = (filled_pomodoros < POMODORO_SLOT_COUNT);
+
+  int8_t max_timer_index = filled_timers + (has_add_timer ? 1 : 0);
+  int8_t min_pomodoro_index = -(filled_pomodoros + (has_add_pomodoro ? 1 : 0));
+
+  // Check bounds
+  if (index < min_pomodoro_index || index > max_timer_index) {
     return false;
   }
 
   if (index == 0) {
     snprintf(buffer, buf_size, "RESET");
     return true;
-  } else if (index <= filled_count) {
-    // Find the nth filled slot
-    int count = 0;
-    for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
-      if (timer_slots_data.slots[i].length_ms > 0) {
-        count++;
-        if (count == index) {
-          int64_t ms = timer_slots_data.slots[i].length_ms;
-          int min = (ms / MSEC_IN_MIN) % 60;
-          int sec = (ms / MSEC_IN_SEC) % 60;
-          int hr = ms / MSEC_IN_HR;
-          if (hr > 0) {
-            snprintf(buffer, buf_size, "%d:%02d:%02d", hr, min, sec);
-          } else {
-            snprintf(buffer, buf_size, "%02d:%02d", min, sec);
+  } else if (index > 0) {
+    // Timer section (positive indices)
+    if (index <= filled_timers) {
+      // Find the nth filled timer slot
+      int count = 0;
+      for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
+        if (timer_slots_data.slots[i].length_ms > 0) {
+          count++;
+          if (count == index) {
+            int64_t ms = timer_slots_data.slots[i].length_ms;
+            int min = (ms / MSEC_IN_MIN) % 60;
+            int sec = (ms / MSEC_IN_SEC) % 60;
+            int hr = ms / MSEC_IN_HR;
+            if (hr > 0) {
+              snprintf(buffer, buf_size, "%d:%02d:%02d", hr, min, sec);
+            } else {
+              snprintf(buffer, buf_size, "%02d:%02d", min, sec);
+            }
+            return true;
           }
-          return true;
         }
       }
+    } else if (has_add_timer) {
+      snprintf(buffer, buf_size, "+ Save Timer");
+      return true;
     }
-  } else if (has_add_new && index == filled_count + 1) {
-    snprintf(buffer, buf_size, "+ Add New");
-    return true;
+  } else {
+    // Pomodoro section (negative indices)
+    // -1 to -N = saved pomodoros, -(N+1) = Add New (if room)
+    int8_t pomo_index = -index - 1;  // -1 -> 0, -2 -> 1, etc.
+
+    if (pomo_index < filled_pomodoros) {
+      // This is a saved pomodoro
+      int8_t slot_index = pomodoro_slots_get_index_for_selection(pomo_index);
+      if (slot_index >= 0) {
+        int64_t work_ms = pomodoro_slots_data.slots[slot_index].work_time_ms;
+        int64_t break_ms = pomodoro_slots_data.slots[slot_index].break_time_ms;
+        int work_hr = work_ms / MSEC_IN_HR;
+        int work_min = (work_ms % MSEC_IN_HR) / MSEC_IN_MIN;
+        int break_hr = break_ms / MSEC_IN_HR;
+        int break_min = (break_ms % MSEC_IN_HR) / MSEC_IN_MIN;
+
+        // Use "-" separator between work and break times
+        if (work_hr > 0 || break_hr > 0) {
+          snprintf(buffer, buf_size, "%d:%02d-%d:%02d", work_hr, work_min, break_hr, break_min);
+        } else {
+          snprintf(buffer, buf_size, "%02d-%02d", work_min, break_min);
+        }
+        return true;
+      }
+    } else if (has_add_pomodoro && pomo_index == filled_pomodoros) {
+      // This is the Add New option
+      snprintf(buffer, buf_size, "+ Add Pomo");
+      return true;
+    }
   }
   return false;
 }
 
 // Render unified setup menu within the circle - scrolling style
+// Helper to check if string can be rendered with LECO font (digits, colons, periods only)
+static bool prv_is_leco_compatible(const char *str) {
+  for (int i = 0; str[i] != '\0'; i++) {
+    char c = str[i];
+    if (!((c >= '0' && c <= '9') || c == ':' || c == '.')) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
   ControlMode mode = main_get_control_mode();
   if (mode != ControlModeSetupMenu) return;
@@ -428,41 +482,205 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
   int16_t center_x = bounds.size.w / 2;
   int16_t center_y = bounds.size.h / 2;
 
-  // Count filled slots
-  int filled_count = 0;
-  for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
-    if (timer_slots_data.slots[i].length_ms > 0) {
-      filled_count++;
-    }
-  }
-
   char item_text[20];
 
   // Draw item ABOVE selection (if exists)
-  if (prv_get_menu_item_text(selection - 1, item_text, sizeof(item_text), filled_count)) {
-    GRect above_rect = GRect(center_x - 50, center_y - 50, 100, 25);
-    graphics_context_set_text_color(ctx, GColorDarkGray);
-    graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-                       above_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  if (prv_get_menu_item_text(selection - 1, item_text, sizeof(item_text))) {
+    if (prv_is_leco_compatible(item_text)) {
+      GRect above_rect = GRect(center_x - 50, center_y - 46, 100, 16);
+      graphics_context_set_stroke_color(ctx, GColorDarkGray);
+      graphics_context_set_fill_color(ctx, GColorDarkGray);
+      text_render_draw_scalable_text(ctx, item_text, above_rect);
+    } else {
+      GRect above_rect = GRect(center_x - 50, center_y - 50, 100, 25);
+      graphics_context_set_text_color(ctx, GColorDarkGray);
+      graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                         above_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    }
   }
 
   // Draw SELECTED item in center (highlighted)
-  if (prv_get_menu_item_text(selection, item_text, sizeof(item_text), filled_count)) {
-    GRect center_rect = GRect(center_x - 55, center_y - 18, 110, 36);
-    graphics_context_set_fill_color(ctx, drawing_data.ring_color);
-    graphics_fill_rect(ctx, center_rect, 4, GCornersAll);
-    graphics_context_set_text_color(ctx, GColorBlack);
-    graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
-                       center_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  if (prv_get_menu_item_text(selection, item_text, sizeof(item_text))) {
+    if (prv_is_leco_compatible(item_text)) {
+      GRect text_rect = GRect(center_x - 55, center_y - 7, 110, 16);
+      GRect highlight_rect = grect_inset(text_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER));
+      graphics_context_set_fill_color(ctx, drawing_data.ring_color);
+      graphics_fill_rect(ctx, highlight_rect, 0, GCornerNone);
+      graphics_context_set_stroke_color(ctx, drawing_data.fore_color);
+      graphics_context_set_fill_color(ctx, drawing_data.fore_color);
+      text_render_draw_scalable_text(ctx, item_text, text_rect);
+    } else {
+      GRect text_rect = GRect(center_x - 55, center_y - 14, 110, 30);
+      GRect highlight_rect = GRect(center_x - 55, center_y - 8, 110, 22);
+      graphics_context_set_fill_color(ctx, drawing_data.ring_color);
+      graphics_fill_rect(ctx, highlight_rect, 4, GCornersAll);
+      graphics_context_set_text_color(ctx, GColorBlack);
+      graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+                         text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    }
   }
 
   // Draw item BELOW selection (if exists)
-  if (prv_get_menu_item_text(selection + 1, item_text, sizeof(item_text), filled_count)) {
-    GRect below_rect = GRect(center_x - 50, center_y + 28, 100, 25);
-    graphics_context_set_text_color(ctx, GColorDarkGray);
-    graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-                       below_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  if (prv_get_menu_item_text(selection + 1, item_text, sizeof(item_text))) {
+    if (prv_is_leco_compatible(item_text)) {
+      GRect below_rect = GRect(center_x - 50, center_y + 32, 100, 16);
+      graphics_context_set_stroke_color(ctx, GColorDarkGray);
+      graphics_context_set_fill_color(ctx, GColorDarkGray);
+      text_render_draw_scalable_text(ctx, item_text, below_rect);
+    } else {
+      GRect below_rect = GRect(center_x - 50, center_y + 28, 100, 25);
+      graphics_context_set_text_color(ctx, GColorDarkGray);
+      graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                         below_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    }
   }
+}
+
+// Helper to check if in pomodoro work creation mode
+static bool prv_is_pomodoro_work_create_mode(ControlMode mode) {
+  return mode == ControlModePomodoroCreateWorkHr ||
+         mode == ControlModePomodoroCreateWorkMin ||
+         mode == ControlModePomodoroCreateWorkSec;
+}
+
+// Helper to check if in pomodoro break creation mode
+static bool prv_is_pomodoro_break_create_mode(ControlMode mode) {
+  return mode == ControlModePomodoroCreateBreakHr ||
+         mode == ControlModePomodoroCreateBreakMin ||
+         mode == ControlModePomodoroCreateBreakSec;
+}
+
+// Helper to check if in any pomodoro creation mode
+static bool prv_is_any_pomodoro_create_mode(ControlMode mode) {
+  return prv_is_pomodoro_work_create_mode(mode) || prv_is_pomodoro_break_create_mode(mode);
+}
+
+// Render pomodoro creation screen (timer-style UI)
+static void prv_render_pomodoro_create(GContext *ctx, GRect bounds) {
+  ControlMode mode = main_get_control_mode();
+  if (!prv_is_any_pomodoro_create_mode(mode)) return;
+
+  int16_t center_x = bounds.size.w / 2;
+  int16_t center_y = bounds.size.h / 2;
+
+  // Get temp values
+  int64_t work_ms = main_get_temp_pomodoro_work();
+  int64_t break_ms = main_get_temp_pomodoro_break();
+
+  // Calculate time parts
+  uint16_t work_hr = work_ms / MSEC_IN_HR;
+  uint16_t work_min = (work_ms % MSEC_IN_HR) / MSEC_IN_MIN;
+  uint16_t work_sec = (work_ms % MSEC_IN_MIN) / MSEC_IN_SEC;
+  uint16_t break_hr = break_ms / MSEC_IN_HR;
+  uint16_t break_min = (break_ms % MSEC_IN_HR) / MSEC_IN_MIN;
+  uint16_t break_sec = (break_ms % MSEC_IN_MIN) / MSEC_IN_SEC;
+
+  bool editing_work = prv_is_pomodoro_work_create_mode(mode);
+
+  // Draw header (WORK or BREAK)
+  const char *header = editing_work ? "WORK" : "BREAK";
+  GRect header_rect = GRect(center_x - 50, center_y - CIRCLE_RADIUS + 10, 100, 25);
+  graphics_context_set_text_color(ctx, drawing_data.fore_color);
+  graphics_draw_text(ctx, header, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+                     header_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+  // Determine which time to display and edit
+  uint16_t hr, min, sec;
+  ControlMode hr_mode, min_mode, sec_mode;
+  if (editing_work) {
+    hr = work_hr; min = work_min; sec = work_sec;
+    hr_mode = ControlModePomodoroCreateWorkHr;
+    min_mode = ControlModePomodoroCreateWorkMin;
+    sec_mode = ControlModePomodoroCreateWorkSec;
+  } else {
+    hr = break_hr; min = break_min; sec = break_sec;
+    hr_mode = ControlModePomodoroCreateBreakHr;
+    min_mode = ControlModePomodoroCreateBreakMin;
+    sec_mode = ControlModePomodoroCreateBreakSec;
+  }
+
+  // Calculate field positions - draw each field separately (no colons, like main screen)
+  int16_t field_width = 36;
+  int16_t field_spacing = 8;
+  int16_t total_width;
+  int16_t field_y = center_y - 12;
+
+  if (hr > 0) {
+    // HH MM SS layout
+    total_width = field_width * 3 + field_spacing * 2;
+  } else {
+    // MM SS layout
+    total_width = field_width * 2 + field_spacing;
+  }
+
+  int16_t start_x = center_x - total_width / 2;
+  int16_t x_pos = start_x;
+
+  char field_str[4];
+
+  // Draw hours if present
+  if (hr > 0) {
+    GRect hr_rect = GRect(x_pos, field_y, field_width, 32);
+    snprintf(field_str, sizeof(field_str), "%02d", hr);
+
+    if (mode == hr_mode) {
+      // Draw highlight
+      graphics_context_set_fill_color(ctx, drawing_data.ring_color);
+      graphics_fill_rect(ctx, grect_inset(hr_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER)), 0, GCornerNone);
+    }
+    graphics_context_set_stroke_color(ctx, drawing_data.fore_color);
+    graphics_context_set_fill_color(ctx, drawing_data.fore_color);
+    text_render_draw_scalable_text(ctx, field_str, hr_rect);
+    x_pos += field_width + field_spacing;
+  }
+
+  // Draw minutes
+  GRect min_rect = GRect(x_pos, field_y, field_width, 32);
+  snprintf(field_str, sizeof(field_str), "%02d", min);
+
+  if (mode == min_mode) {
+    graphics_context_set_fill_color(ctx, drawing_data.ring_color);
+    graphics_fill_rect(ctx, grect_inset(min_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER)), 0, GCornerNone);
+  }
+  graphics_context_set_stroke_color(ctx, drawing_data.fore_color);
+  graphics_context_set_fill_color(ctx, drawing_data.fore_color);
+  text_render_draw_scalable_text(ctx, field_str, min_rect);
+  x_pos += field_width + field_spacing;
+
+  // Draw seconds
+  GRect sec_rect = GRect(x_pos, field_y, field_width, 32);
+  snprintf(field_str, sizeof(field_str), "%02d", sec);
+
+  if (mode == sec_mode) {
+    graphics_context_set_fill_color(ctx, drawing_data.ring_color);
+    graphics_fill_rect(ctx, grect_inset(sec_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER)), 0, GCornerNone);
+  }
+  graphics_context_set_stroke_color(ctx, drawing_data.fore_color);
+  graphics_context_set_fill_color(ctx, drawing_data.fore_color);
+  text_render_draw_scalable_text(ctx, field_str, sec_rect);
+
+  // Draw the other time (dimmed) at bottom
+  const char *other_label = editing_work ? "Break:" : "Work:";
+  char other_time[20];
+  if (editing_work) {
+    if (break_hr > 0) {
+      snprintf(other_time, sizeof(other_time), "%d:%02d:%02d", break_hr, break_min, break_sec);
+    } else {
+      snprintf(other_time, sizeof(other_time), "%02d:%02d", break_min, break_sec);
+    }
+  } else {
+    if (work_hr > 0) {
+      snprintf(other_time, sizeof(other_time), "%d:%02d:%02d", work_hr, work_min, work_sec);
+    } else {
+      snprintf(other_time, sizeof(other_time), "%02d:%02d", work_min, work_sec);
+    }
+  }
+  char other_str[30];
+  snprintf(other_str, sizeof(other_str), "%s %s", other_label, other_time);
+  GRect other_rect = GRect(0, center_y + CIRCLE_RADIUS - 40, bounds.size.w, 25);
+  graphics_context_set_text_color(ctx, GColorDarkGray);
+  graphics_draw_text(ctx, other_str, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                     other_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 }
 
 // Render pomodoro configuration menu
@@ -556,7 +774,7 @@ void drawing_render(Layer *layer, GContext *ctx) {
     return;
   }
 
-  // Draw the circular background for normal mode and setup menu
+  // Draw the circular background for normal mode, setup menu, and pomodoro creation
   graphics_context_set_fill_color(ctx, drawing_data.ring_color);
 #ifdef PBL_BW
   graphics_fill_rect_grey(ctx, bounds);
@@ -571,6 +789,12 @@ void drawing_render(Layer *layer, GContext *ctx) {
   // If in setup menu, render menu content instead of timer
   if (mode == ControlModeSetupMenu) {
     prv_render_setup_menu(ctx, bounds);
+    return;
+  }
+
+  // If in pomodoro creation mode, render the timer-style editor
+  if (prv_is_any_pomodoro_create_mode(mode)) {
+    prv_render_pomodoro_create(ctx, bounds);
     return;
   }
 
