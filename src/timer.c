@@ -303,6 +303,14 @@ void timer_slots_load(uint8_t slot_index) {
   }
 }
 
+// Delete a timer from a slot
+void timer_slots_delete(uint8_t slot_index) {
+  if (slot_index < TIMER_SLOT_COUNT) {
+    timer_slots_data.slots[slot_index].length_ms = 0;
+    persist_write_data(PERSIST_SLOTS_KEY, &timer_slots_data, sizeof(timer_slots_data));
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Pomodoro Functions
 //

@@ -329,11 +329,43 @@ static void prv_select_raw_click_handler(ClickRecognizerRef recognizer, void *ct
 
 // Select long click handler
 static void prv_select_long_click_handler(ClickRecognizerRef recognizer, void *ctx) {
-  // If in counting mode (running), reset timer
+  // If in setup menu with a saved timer selected, delete it
+  if (main_data.control_mode == ControlModeSetupMenu) {
+    uint8_t filled = prv_count_filled_slots();
+    // Check if selection is a saved timer (not Reset or Add New)
+    if (main_data.setup_selection >= 1 && main_data.setup_selection <= filled) {
+      int8_t slot_index = prv_get_slot_index_for_selection(main_data.setup_selection - 1);
+      if (slot_index >= 0) {
+        timer_slots_delete(slot_index);
+        // Adjust selection if we deleted the last item
+        uint8_t new_filled = prv_count_filled_slots();
+        uint8_t max_selection = new_filled + ((new_filled < TIMER_SLOT_COUNT) ? 1 : 0);
+        if (main_data.setup_selection > max_selection) {
+          main_data.setup_selection = max_selection;
+        }
+        vibes_short_pulse();  // Feedback for deletion
+      }
+      drawing_update();
+      layer_mark_dirty(main_data.layer);
+    }
+    return;
+  }
+
+  // If in counting mode (running), reset timer to original value but stay paused
   if (main_data.control_mode == ControlModeCounting) {
-    timer_reset();
+    if (timer_data.base_length_ms > 0) {
+      // Reset countdown to original value, paused
+      timer_data.length_ms = timer_data.base_length_ms;
+      timer_data.start_ms = 0;  // Paused
+      timer_data.can_vibrate = true;
+      timer_data.auto_snooze_count = 0;
+      main_data.control_mode = ControlModeEditSec;
+    } else {
+      // Chrono mode - just pause and rewind
+      timer_rewind();
+      main_data.control_mode = ControlModeEditSec;
+    }
     pomodoro_stop();
-    main_data.control_mode = ControlModeEditMin;
     drawing_update();
     layer_mark_dirty(main_data.layer);
     return;

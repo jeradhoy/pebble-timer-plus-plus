@@ -121,6 +121,9 @@ void timer_slots_save_current(uint8_t slot_index);
 //! Load a timer from a slot
 void timer_slots_load(uint8_t slot_index);
 
+//! Delete a timer from a slot
+void timer_slots_delete(uint8_t slot_index);
+
 // Pomodoro functions
 //! Start pomodoro mode
 void pomodoro_start(void);
