@@ -439,14 +439,11 @@ static void prv_select_click_handler(ClickRecognizerRef recognizer, void *ctx) {
       int8_t pomo_index = -main_data.setup_selection - 1;  // -1 -> 0, -2 -> 1, etc.
 
       if (pomo_index < filled_pomodoros) {
-        // A saved pomodoro is selected - load and start it
+        // A saved pomodoro is selected - load it paused
         int8_t slot_index = pomodoro_slots_get_index_for_selection(pomo_index);
         if (slot_index >= 0) {
           pomodoro_slots_load(slot_index);
-          main_data.control_mode = ControlModeCounting;
-          if (!main_data.app_timer) {
-            prv_app_timer_callback(NULL);
-          }
+          main_data.control_mode = ControlModeEditSec;  // Paused, user starts manually
         }
         drawing_update();
         layer_mark_dirty(main_data.layer);
@@ -817,17 +814,57 @@ static void prv_down_click_handler(ClickRecognizerRef recognizer, void *ctx) {
   layer_mark_dirty(main_data.layer);
 }
 
+// Up long click handler - skip to previous pomodoro phase
+static void prv_up_long_click_handler(ClickRecognizerRef recognizer, void *ctx) {
+  // Handle when in pomodoro mode (running or paused)
+  if (pomodoro_data.is_active &&
+      (main_data.control_mode == ControlModeCounting ||
+       main_data.control_mode == ControlModeEditHr ||
+       main_data.control_mode == ControlModeEditMin ||
+       main_data.control_mode == ControlModeEditSec)) {
+    pomodoro_skip_to_previous();
+    // Keep paused if was paused
+    if (main_data.control_mode != ControlModeCounting) {
+      timer_data.start_ms = 0;
+    }
+    vibes_short_pulse();
+    drawing_update();
+    layer_mark_dirty(main_data.layer);
+  }
+}
+
+// Down long click handler - skip to next pomodoro phase
+static void prv_down_long_click_handler(ClickRecognizerRef recognizer, void *ctx) {
+  // Handle when in pomodoro mode (running or paused)
+  if (pomodoro_data.is_active &&
+      (main_data.control_mode == ControlModeCounting ||
+       main_data.control_mode == ControlModeEditHr ||
+       main_data.control_mode == ControlModeEditMin ||
+       main_data.control_mode == ControlModeEditSec)) {
+    pomodoro_skip_to_next();
+    // Keep paused if was paused
+    if (main_data.control_mode != ControlModeCounting) {
+      timer_data.start_ms = 0;
+    }
+    vibes_short_pulse();
+    drawing_update();
+    layer_mark_dirty(main_data.layer);
+  }
+}
+
 // Click configuration provider
 static void prv_click_config_provider(void *ctx) {
   window_single_click_subscribe(BUTTON_ID_BACK, prv_back_click_handler);
   window_single_repeating_click_subscribe(BUTTON_ID_UP, BUTTON_HOLD_REPEAT_MS,
     prv_up_click_handler);
+  window_long_click_subscribe(BUTTON_ID_UP, BUTTON_HOLD_RESET_MS, prv_up_long_click_handler, NULL);
   window_single_click_subscribe(BUTTON_ID_SELECT, prv_select_click_handler);
   window_raw_click_subscribe(BUTTON_ID_SELECT, prv_select_raw_click_handler, NULL, NULL);
   window_long_click_subscribe(BUTTON_ID_SELECT, BUTTON_HOLD_RESET_MS, prv_select_long_click_handler,
     NULL);
   window_single_repeating_click_subscribe(BUTTON_ID_DOWN, BUTTON_HOLD_REPEAT_MS,
     prv_down_click_handler);
+  window_long_click_subscribe(BUTTON_ID_DOWN, BUTTON_HOLD_RESET_MS, prv_down_long_click_handler, NULL);
 }
 
 // AppTimer callback

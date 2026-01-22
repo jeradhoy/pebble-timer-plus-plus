@@ -375,6 +375,54 @@ void pomodoro_handle_timer_complete(void) {
   timer_data.auto_snooze_count = 0;
 }
 
+// Skip to next pomodoro phase
+void pomodoro_skip_to_next(void) {
+  if (!pomodoro_data.is_active) return;
+
+  if (pomodoro_data.is_work_phase) {
+    // Skip to break
+    pomodoro_data.is_work_phase = false;
+    pomodoro_data.completed_cycles++;
+    timer_data.length_ms = pomodoro_data.break_time_ms;
+    timer_data.base_length_ms = pomodoro_data.break_time_ms;
+  } else {
+    // Skip to work
+    pomodoro_data.is_work_phase = true;
+    timer_data.length_ms = pomodoro_data.work_time_ms;
+    timer_data.base_length_ms = pomodoro_data.work_time_ms;
+  }
+
+  // Start the new phase
+  timer_data.start_ms = epoch();
+  timer_data.can_vibrate = true;
+  timer_data.auto_snooze_count = 0;
+}
+
+// Skip to previous pomodoro phase
+void pomodoro_skip_to_previous(void) {
+  if (!pomodoro_data.is_active) return;
+
+  if (pomodoro_data.is_work_phase) {
+    // Go back to break (decrement cycle count if > 0)
+    pomodoro_data.is_work_phase = false;
+    if (pomodoro_data.completed_cycles > 0) {
+      pomodoro_data.completed_cycles--;
+    }
+    timer_data.length_ms = pomodoro_data.break_time_ms;
+    timer_data.base_length_ms = pomodoro_data.break_time_ms;
+  } else {
+    // Go back to work
+    pomodoro_data.is_work_phase = true;
+    timer_data.length_ms = pomodoro_data.work_time_ms;
+    timer_data.base_length_ms = pomodoro_data.work_time_ms;
+  }
+
+  // Start the phase
+  timer_data.start_ms = epoch();
+  timer_data.can_vibrate = true;
+  timer_data.auto_snooze_count = 0;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Pomodoro Slots Functions
 //
@@ -395,8 +443,19 @@ void pomodoro_slots_load(uint8_t slot_index) {
     // Set pomodoro data from slot
     pomodoro_data.work_time_ms = pomodoro_slots_data.slots[slot_index].work_time_ms;
     pomodoro_data.break_time_ms = pomodoro_slots_data.slots[slot_index].break_time_ms;
-    // Start the pomodoro
-    pomodoro_start();
+    pomodoro_data.is_active = true;
+    pomodoro_data.is_work_phase = true;
+    pomodoro_data.completed_cycles = 0;
+
+    // Set timer to work duration but leave paused (start_ms = 0)
+    timer_data.length_ms = pomodoro_data.work_time_ms;
+    timer_data.base_length_ms = pomodoro_data.work_time_ms;
+    timer_data.start_ms = 0;  // Paused - user will start manually
+    timer_data.can_vibrate = true;
+    timer_data.auto_snooze_count = 0;
+
+    // Save pomodoro settings
+    persist_write_data(PERSIST_POMODORO_KEY, &pomodoro_data, sizeof(pomodoro_data));
   }
 }
 

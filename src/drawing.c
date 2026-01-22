@@ -673,6 +673,33 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
                          text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     }
   }
+
+  // Show "Hold to Delete" help text if a deletable item is selected
+  uint8_t filled_timers = 0;
+  for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
+    if (timer_slots_data.slots[i].length_ms > 0) filled_timers++;
+  }
+  uint8_t filled_pomodoros = pomodoro_slots_count_filled();
+
+  bool is_deletable = false;
+  // Check if saved timer (positive index within filled range)
+  if (selection >= 1 && selection <= filled_timers) {
+    is_deletable = true;
+  }
+  // Check if saved pomodoro (negative index within filled range)
+  if (selection < 0) {
+    int8_t pomo_index = -selection - 1;
+    if (pomo_index < filled_pomodoros) {
+      is_deletable = true;
+    }
+  }
+
+  if (is_deletable) {
+    GRect help_rect = GRect(0, bounds.size.h - 20, bounds.size.w, 18);
+    graphics_context_set_text_color(ctx, GColorDarkGray);
+    graphics_draw_text(ctx, "Hold to Delete", fonts_get_system_font(FONT_KEY_GOTHIC_14),
+                       help_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
 }
 
 // Helper to check if in pomodoro work creation mode

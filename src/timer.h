@@ -149,6 +149,12 @@ void pomodoro_stop(void);
 //! Handle timer completion in pomodoro mode (switch phases)
 void pomodoro_handle_timer_complete(void);
 
+//! Skip to next pomodoro phase (work->break or break->work)
+void pomodoro_skip_to_next(void);
+
+//! Skip to previous pomodoro phase (or restart current if just started)
+void pomodoro_skip_to_previous(void);
+
 // Pomodoro slots functions
 //! Save pomodoro to a slot
 void pomodoro_slots_save(uint8_t slot_index, int64_t work_ms, int64_t break_ms);
