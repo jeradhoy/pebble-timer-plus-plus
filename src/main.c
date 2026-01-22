@@ -282,6 +282,7 @@ static void prv_up_click_handler(ClickRecognizerRef recognizer, void *ctx) {
     } else {
       main_data.setup_selection = max_timer_selection;  // Wrap to bottom of timer section
     }
+    drawing_start_menu_scroll_animation(true);  // Scrolling up
     drawing_update();
     layer_mark_dirty(main_data.layer);
     return;
@@ -709,6 +710,7 @@ static void prv_down_click_handler(ClickRecognizerRef recognizer, void *ctx) {
     } else {
       main_data.setup_selection = min_pomodoro_selection;  // Wrap to top of pomodoro section
     }
+    drawing_start_menu_scroll_animation(false);  // Scrolling down
     drawing_update();
     layer_mark_dirty(main_data.layer);
     return;

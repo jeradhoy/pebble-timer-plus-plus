@@ -59,6 +59,8 @@ static struct {
   GColor      mid_color;          //< Color of center
   GColor      ring_color;         //< Color of ring
   GColor      back_color;         //< Color behind ring
+  int32_t     menu_scroll_offset; //< Animated offset for menu scrolling
+  GRect       pomo_focus_field;   //< Animated focus field for pomodoro creation
 } drawing_data;
 
 
@@ -106,6 +108,62 @@ static void prv_render_focus_layer(GContext *ctx) {
   graphics_context_set_fill_color(ctx, drawing_data.ring_color);
   graphics_fill_rect(ctx, drawing_data.focus_field, 0, GCornerNone);
 #endif
+}
+
+// Update pomodoro focus layer state based on current mode
+static void prv_pomo_focus_update_state(GRect bounds) {
+  ControlMode mode = main_get_control_mode();
+
+  // Calculate field positions (must match prv_render_pomodoro_create)
+  int16_t center_x = bounds.size.w / 2;
+  int16_t center_y = bounds.size.h / 2;
+  int16_t field_width = 36;
+  int16_t field_spacing = 8;
+  int16_t field_y = center_y - 12;
+
+  // Get current time to determine layout
+  int64_t time_ms;
+  bool editing_work = (mode == ControlModePomodoroCreateWorkHr ||
+                       mode == ControlModePomodoroCreateWorkMin ||
+                       mode == ControlModePomodoroCreateWorkSec);
+  if (editing_work) {
+    time_ms = main_get_temp_pomodoro_work();
+  } else {
+    time_ms = main_get_temp_pomodoro_break();
+  }
+  uint16_t hr = time_ms / MSEC_IN_HR;
+
+  int16_t total_width;
+  if (hr > 0) {
+    total_width = field_width * 3 + field_spacing * 2;
+  } else {
+    total_width = field_width * 2 + field_spacing;
+  }
+  int16_t start_x = center_x - total_width / 2;
+
+  // Calculate target rect based on current mode
+  GRect target;
+  if (mode == ControlModePomodoroCreateWorkHr || mode == ControlModePomodoroCreateBreakHr) {
+    target = GRect(start_x, field_y, field_width, 32);
+  } else if (mode == ControlModePomodoroCreateWorkMin || mode == ControlModePomodoroCreateBreakMin) {
+    if (hr > 0) {
+      target = GRect(start_x + field_width + field_spacing, field_y, field_width, 32);
+    } else {
+      target = GRect(start_x, field_y, field_width, 32);
+    }
+  } else {
+    // Seconds
+    if (hr > 0) {
+      target = GRect(start_x + (field_width + field_spacing) * 2, field_y, field_width, 32);
+    } else {
+      target = GRect(start_x + field_width + field_spacing, field_y, field_width, 32);
+    }
+  }
+
+  // Add border and animate
+  target = grect_inset(target, GEdgeInsets1(-FOCUS_FIELD_BORDER));
+  animation_grect_start(&drawing_data.pomo_focus_field, target, FOCUS_FIELD_ANI_DURATION, 0,
+    CurveSinEaseOut);
 }
 
 
@@ -375,6 +433,17 @@ void drawing_start_reset_animation(void) {
     FOCUS_FIELD_SHRINK_DURATION, BUTTON_HOLD_RESET_MS, CurveLinear);
 }
 
+// Menu scroll animation constants
+#define MENU_SCROLL_DISTANCE 30
+#define MENU_SCROLL_DURATION 120
+
+// Create scroll animation for settings menu
+void drawing_start_menu_scroll_animation(bool upward) {
+  // Start from an offset and animate back to 0
+  drawing_data.menu_scroll_offset = upward ? -MENU_SCROLL_DISTANCE : MENU_SCROLL_DISTANCE;
+  animation_int32_start(&drawing_data.menu_scroll_offset, 0, MENU_SCROLL_DURATION, 0, CurveSinEaseOut);
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Setup Menu Rendering
 //
@@ -540,12 +609,13 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
   int8_t selection = main_get_setup_selection();
   int16_t center_x = bounds.size.w / 2;
   int16_t center_y = bounds.size.h / 2;
+  int16_t scroll_offset = drawing_data.menu_scroll_offset;
 
   char item_text[20];
 
   // Draw item ABOVE selection (if exists)
   if (prv_get_menu_item_text(selection - 1, item_text, sizeof(item_text))) {
-    GRect above_rect = GRect(center_x - 50, center_y - 46, 100, 16);
+    GRect above_rect = GRect(center_x - 50, center_y - 46 + scroll_offset, 100, 16);
     if (prv_is_pomodoro_format(item_text)) {
       prv_draw_pomodoro_time(ctx, item_text, above_rect, true);
     } else if (prv_is_leco_compatible(item_text)) {
@@ -553,7 +623,7 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
       graphics_context_set_fill_color(ctx, GColorDarkGray);
       text_render_draw_scalable_text(ctx, item_text, above_rect);
     } else {
-      GRect text_rect = GRect(center_x - 50, center_y - 50, 100, 25);
+      GRect text_rect = GRect(center_x - 50, center_y - 50 + scroll_offset, 100, 25);
       graphics_context_set_text_color(ctx, GColorDarkGray);
       graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
                          text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
@@ -563,13 +633,13 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
   // Draw SELECTED item in center (highlighted)
   if (prv_get_menu_item_text(selection, item_text, sizeof(item_text))) {
     if (prv_is_pomodoro_format(item_text)) {
-      GRect text_rect = GRect(center_x - 55, center_y - 7, 110, 16);
+      GRect text_rect = GRect(center_x - 55, center_y - 7 + scroll_offset, 110, 16);
       GRect highlight_rect = grect_inset(text_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER));
       graphics_context_set_fill_color(ctx, drawing_data.ring_color);
       graphics_fill_rect(ctx, highlight_rect, 0, GCornerNone);
       prv_draw_pomodoro_time(ctx, item_text, text_rect, false);
     } else if (prv_is_leco_compatible(item_text)) {
-      GRect text_rect = GRect(center_x - 55, center_y - 7, 110, 16);
+      GRect text_rect = GRect(center_x - 55, center_y - 7 + scroll_offset, 110, 16);
       GRect highlight_rect = grect_inset(text_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER));
       graphics_context_set_fill_color(ctx, drawing_data.ring_color);
       graphics_fill_rect(ctx, highlight_rect, 0, GCornerNone);
@@ -577,8 +647,8 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
       graphics_context_set_fill_color(ctx, drawing_data.fore_color);
       text_render_draw_scalable_text(ctx, item_text, text_rect);
     } else {
-      GRect text_rect = GRect(center_x - 55, center_y - 14, 110, 30);
-      GRect highlight_rect = GRect(center_x - 55, center_y - 8, 110, 22);
+      GRect text_rect = GRect(center_x - 55, center_y - 14 + scroll_offset, 110, 30);
+      GRect highlight_rect = GRect(center_x - 55, center_y - 8 + scroll_offset, 110, 22);
       graphics_context_set_fill_color(ctx, drawing_data.ring_color);
       graphics_fill_rect(ctx, highlight_rect, 4, GCornersAll);
       graphics_context_set_text_color(ctx, GColorBlack);
@@ -589,7 +659,7 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
 
   // Draw item BELOW selection (if exists)
   if (prv_get_menu_item_text(selection + 1, item_text, sizeof(item_text))) {
-    GRect below_rect = GRect(center_x - 50, center_y + 32, 100, 16);
+    GRect below_rect = GRect(center_x - 50, center_y + 32 + scroll_offset, 100, 16);
     if (prv_is_pomodoro_format(item_text)) {
       prv_draw_pomodoro_time(ctx, item_text, below_rect, true);
     } else if (prv_is_leco_compatible(item_text)) {
@@ -597,7 +667,7 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
       graphics_context_set_fill_color(ctx, GColorDarkGray);
       text_render_draw_scalable_text(ctx, item_text, below_rect);
     } else {
-      GRect text_rect = GRect(center_x - 50, center_y + 28, 100, 25);
+      GRect text_rect = GRect(center_x - 50, center_y + 28 + scroll_offset, 100, 25);
       graphics_context_set_text_color(ctx, GColorDarkGray);
       graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
                          text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
@@ -653,19 +723,12 @@ static void prv_render_pomodoro_create(GContext *ctx, GRect bounds) {
   graphics_draw_text(ctx, header, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
                      header_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 
-  // Determine which time to display and edit
+  // Determine which time to display
   uint16_t hr, min, sec;
-  ControlMode hr_mode, min_mode, sec_mode;
   if (editing_work) {
     hr = work_hr; min = work_min; sec = work_sec;
-    hr_mode = ControlModePomodoroCreateWorkHr;
-    min_mode = ControlModePomodoroCreateWorkMin;
-    sec_mode = ControlModePomodoroCreateWorkSec;
   } else {
     hr = break_hr; min = break_min; sec = break_sec;
-    hr_mode = ControlModePomodoroCreateBreakHr;
-    min_mode = ControlModePomodoroCreateBreakMin;
-    sec_mode = ControlModePomodoroCreateBreakSec;
   }
 
   // Calculate field positions - draw each field separately (no colons, like main screen)
@@ -687,16 +750,14 @@ static void prv_render_pomodoro_create(GContext *ctx, GRect bounds) {
 
   char field_str[4];
 
+  // Draw animated focus field first (behind text)
+  graphics_context_set_fill_color(ctx, drawing_data.ring_color);
+  graphics_fill_rect(ctx, drawing_data.pomo_focus_field, 0, GCornerNone);
+
   // Draw hours if present
   if (hr > 0) {
     GRect hr_rect = GRect(x_pos, field_y, field_width, 32);
     snprintf(field_str, sizeof(field_str), "%02d", hr);
-
-    if (mode == hr_mode) {
-      // Draw highlight
-      graphics_context_set_fill_color(ctx, drawing_data.ring_color);
-      graphics_fill_rect(ctx, grect_inset(hr_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER)), 0, GCornerNone);
-    }
     graphics_context_set_stroke_color(ctx, drawing_data.fore_color);
     graphics_context_set_fill_color(ctx, drawing_data.fore_color);
     text_render_draw_scalable_text(ctx, field_str, hr_rect);
@@ -706,11 +767,6 @@ static void prv_render_pomodoro_create(GContext *ctx, GRect bounds) {
   // Draw minutes
   GRect min_rect = GRect(x_pos, field_y, field_width, 32);
   snprintf(field_str, sizeof(field_str), "%02d", min);
-
-  if (mode == min_mode) {
-    graphics_context_set_fill_color(ctx, drawing_data.ring_color);
-    graphics_fill_rect(ctx, grect_inset(min_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER)), 0, GCornerNone);
-  }
   graphics_context_set_stroke_color(ctx, drawing_data.fore_color);
   graphics_context_set_fill_color(ctx, drawing_data.fore_color);
   text_render_draw_scalable_text(ctx, field_str, min_rect);
@@ -719,11 +775,6 @@ static void prv_render_pomodoro_create(GContext *ctx, GRect bounds) {
   // Draw seconds
   GRect sec_rect = GRect(x_pos, field_y, field_width, 32);
   snprintf(field_str, sizeof(field_str), "%02d", sec);
-
-  if (mode == sec_mode) {
-    graphics_context_set_fill_color(ctx, drawing_data.ring_color);
-    graphics_fill_rect(ctx, grect_inset(sec_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER)), 0, GCornerNone);
-  }
   graphics_context_set_stroke_color(ctx, drawing_data.fore_color);
   graphics_context_set_fill_color(ctx, drawing_data.fore_color);
   text_render_draw_scalable_text(ctx, field_str, sec_rect);
@@ -888,6 +939,12 @@ void drawing_update(void) {
   prv_update_draw_state(drawing_data.layer);
   // update progress ring angle
   prv_progress_ring_update();
+  // update pomodoro focus field if in pomodoro creation mode
+  ControlMode mode = main_get_control_mode();
+  if (prv_is_any_pomodoro_create_mode(mode)) {
+    GRect bounds = layer_get_bounds(drawing_data.layer);
+    prv_pomo_focus_update_state(bounds);
+  }
 }
 
 // Initialize the singleton drawing data
@@ -907,6 +964,8 @@ void drawing_initialize(Layer *layer) {
     drawing_data.focus_field.origin.x = bounds.size.w;
   }
   drawing_data.focus_field.size = GSizeZero;
+  drawing_data.pomo_focus_field.origin = grect_center_point(&bounds);
+  drawing_data.pomo_focus_field.size = GSizeZero;
   // set initial draw state to something which guaranties a refresh
   drawing_data.draw_state = (DrawState) {
     .hr_digits = 99,
