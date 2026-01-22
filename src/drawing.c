@@ -401,7 +401,7 @@ static bool prv_get_menu_item_text(int8_t index, char *buffer, size_t buf_size) 
   }
 
   if (index == 0) {
-    snprintf(buffer, buf_size, "RESET");
+    snprintf(buffer, buf_size, "Reset");
     return true;
   } else if (index > 0) {
     // Timer section (positive indices)
@@ -474,6 +474,65 @@ static bool prv_is_leco_compatible(const char *str) {
   return true;
 }
 
+// Helper to check if string is a pomodoro format (work-break with dash)
+static bool prv_is_pomodoro_format(const char *str) {
+  for (int i = 0; str[i] != '\0'; i++) {
+    if (str[i] == '-') return true;
+  }
+  return false;
+}
+
+// Helper to draw pomodoro time with LECO for numbers and system font for dash
+static void prv_draw_pomodoro_time(GContext *ctx, const char *str, GRect bounds, bool dimmed) {
+  // Find the dash position
+  int dash_pos = -1;
+  for (int i = 0; str[i] != '\0'; i++) {
+    if (str[i] == '-') {
+      dash_pos = i;
+      break;
+    }
+  }
+  if (dash_pos < 0) return;
+
+  // Split into work and break parts
+  char work_str[12], break_str[12];
+  strncpy(work_str, str, dash_pos);
+  work_str[dash_pos] = '\0';
+  strcpy(break_str, str + dash_pos + 1);
+
+  // Calculate widths
+  GRect work_bounds = text_render_get_content_bounds(work_str, bounds.size.h);
+  GRect break_bounds = text_render_get_content_bounds(break_str, bounds.size.h);
+  int16_t dash_width = 8;
+  int16_t total_width = work_bounds.size.w + dash_width + break_bounds.size.w;
+
+  // Center horizontally
+  int16_t start_x = bounds.origin.x + (bounds.size.w - total_width) / 2;
+  int16_t x_pos = start_x;
+
+  GColor color = dimmed ? GColorDarkGray : drawing_data.fore_color;
+
+  // Draw work time with LECO
+  GRect work_rect = GRect(x_pos, bounds.origin.y, work_bounds.size.w, bounds.size.h);
+  graphics_context_set_stroke_color(ctx, color);
+  graphics_context_set_fill_color(ctx, color);
+  text_render_draw_scalable_text(ctx, work_str, work_rect);
+  x_pos += work_bounds.size.w;
+
+  // Draw dash with system font
+  GRect dash_rect = GRect(x_pos - 2, bounds.origin.y - 2, dash_width + 4, bounds.size.h + 4);
+  graphics_context_set_text_color(ctx, color);
+  graphics_draw_text(ctx, "-", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+                     dash_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  x_pos += dash_width;
+
+  // Draw break time with LECO
+  GRect break_rect = GRect(x_pos, bounds.origin.y, break_bounds.size.w, bounds.size.h);
+  graphics_context_set_stroke_color(ctx, color);
+  graphics_context_set_fill_color(ctx, color);
+  text_render_draw_scalable_text(ctx, break_str, break_rect);
+}
+
 static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
   ControlMode mode = main_get_control_mode();
   if (mode != ControlModeSetupMenu) return;
@@ -486,22 +545,30 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
 
   // Draw item ABOVE selection (if exists)
   if (prv_get_menu_item_text(selection - 1, item_text, sizeof(item_text))) {
-    if (prv_is_leco_compatible(item_text)) {
-      GRect above_rect = GRect(center_x - 50, center_y - 46, 100, 16);
+    GRect above_rect = GRect(center_x - 50, center_y - 46, 100, 16);
+    if (prv_is_pomodoro_format(item_text)) {
+      prv_draw_pomodoro_time(ctx, item_text, above_rect, true);
+    } else if (prv_is_leco_compatible(item_text)) {
       graphics_context_set_stroke_color(ctx, GColorDarkGray);
       graphics_context_set_fill_color(ctx, GColorDarkGray);
       text_render_draw_scalable_text(ctx, item_text, above_rect);
     } else {
-      GRect above_rect = GRect(center_x - 50, center_y - 50, 100, 25);
+      GRect text_rect = GRect(center_x - 50, center_y - 50, 100, 25);
       graphics_context_set_text_color(ctx, GColorDarkGray);
       graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-                         above_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+                         text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     }
   }
 
   // Draw SELECTED item in center (highlighted)
   if (prv_get_menu_item_text(selection, item_text, sizeof(item_text))) {
-    if (prv_is_leco_compatible(item_text)) {
+    if (prv_is_pomodoro_format(item_text)) {
+      GRect text_rect = GRect(center_x - 55, center_y - 7, 110, 16);
+      GRect highlight_rect = grect_inset(text_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER));
+      graphics_context_set_fill_color(ctx, drawing_data.ring_color);
+      graphics_fill_rect(ctx, highlight_rect, 0, GCornerNone);
+      prv_draw_pomodoro_time(ctx, item_text, text_rect, false);
+    } else if (prv_is_leco_compatible(item_text)) {
       GRect text_rect = GRect(center_x - 55, center_y - 7, 110, 16);
       GRect highlight_rect = grect_inset(text_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER));
       graphics_context_set_fill_color(ctx, drawing_data.ring_color);
@@ -522,16 +589,18 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
 
   // Draw item BELOW selection (if exists)
   if (prv_get_menu_item_text(selection + 1, item_text, sizeof(item_text))) {
-    if (prv_is_leco_compatible(item_text)) {
-      GRect below_rect = GRect(center_x - 50, center_y + 32, 100, 16);
+    GRect below_rect = GRect(center_x - 50, center_y + 32, 100, 16);
+    if (prv_is_pomodoro_format(item_text)) {
+      prv_draw_pomodoro_time(ctx, item_text, below_rect, true);
+    } else if (prv_is_leco_compatible(item_text)) {
       graphics_context_set_stroke_color(ctx, GColorDarkGray);
       graphics_context_set_fill_color(ctx, GColorDarkGray);
       text_render_draw_scalable_text(ctx, item_text, below_rect);
     } else {
-      GRect below_rect = GRect(center_x - 50, center_y + 28, 100, 25);
+      GRect text_rect = GRect(center_x - 50, center_y + 28, 100, 25);
       graphics_context_set_text_color(ctx, GColorDarkGray);
       graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-                         below_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+                         text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     }
   }
 }
