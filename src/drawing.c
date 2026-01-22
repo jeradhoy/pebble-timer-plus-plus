@@ -379,56 +379,54 @@ void drawing_start_reset_animation(void) {
 // Setup Menu Rendering
 //
 
-// Render setup menu (POMODORO / RESET / SAVED)
+// Helper to get menu item text for a given index
+// Returns false if index is out of range
+static bool prv_get_menu_item_text(int8_t index, char *buffer, size_t buf_size, int filled_count) {
+  bool has_add_new = (filled_count < TIMER_SLOT_COUNT);
+  int8_t max_index = filled_count + (has_add_new ? 1 : 0);
+
+  if (index < 0 || index > max_index) {
+    return false;
+  }
+
+  if (index == 0) {
+    snprintf(buffer, buf_size, "RESET");
+    return true;
+  } else if (index <= filled_count) {
+    // Find the nth filled slot
+    int count = 0;
+    for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
+      if (timer_slots_data.slots[i].length_ms > 0) {
+        count++;
+        if (count == index) {
+          int64_t ms = timer_slots_data.slots[i].length_ms;
+          int min = (ms / MSEC_IN_MIN) % 60;
+          int sec = (ms / MSEC_IN_SEC) % 60;
+          int hr = ms / MSEC_IN_HR;
+          if (hr > 0) {
+            snprintf(buffer, buf_size, "%d:%02d:%02d", hr, min, sec);
+          } else {
+            snprintf(buffer, buf_size, "%02d:%02d", min, sec);
+          }
+          return true;
+        }
+      }
+    }
+  } else if (has_add_new && index == filled_count + 1) {
+    snprintf(buffer, buf_size, "+ Add New");
+    return true;
+  }
+  return false;
+}
+
+// Render unified setup menu within the circle - scrolling style
 static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
   ControlMode mode = main_get_control_mode();
   if (mode != ControlModeSetupMenu) return;
 
-  SetupPosition pos = main_get_setup_position();
+  int8_t selection = main_get_setup_selection();
+  int16_t center_x = bounds.size.w / 2;
   int16_t center_y = bounds.size.h / 2;
-  int16_t item_height = 40;
-  int16_t text_y_offset = 8;
-
-  // Draw three menu items
-  const char *items[] = {"POMODORO", "RESET", "SAVED"};
-  int16_t positions[] = {center_y - item_height - 10, center_y - item_height/2 + 5, center_y + 20};
-  SetupPosition highlights[] = {SetupPositionPomodoro, SetupPositionCenter, SetupPositionSlots};
-
-  for (int i = 0; i < 3; i++) {
-    GRect item_rect = GRect(10, positions[i], bounds.size.w - 20, item_height);
-
-    // Highlight selected item
-    if (pos == highlights[i]) {
-      graphics_context_set_fill_color(ctx, GColorWhite);
-      graphics_fill_rect(ctx, item_rect, 4, GCornersAll);
-      graphics_context_set_text_color(ctx, GColorBlack);
-    } else {
-      graphics_context_set_text_color(ctx, GColorWhite);
-    }
-
-    // Draw text
-    GRect text_rect = GRect(item_rect.origin.x, item_rect.origin.y + text_y_offset,
-                            item_rect.size.w, item_rect.size.h);
-    graphics_draw_text(ctx, items[i], fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-                       text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-  }
-}
-
-// Render slot selection menu
-static void prv_render_slot_menu(GContext *ctx, GRect bounds) {
-  ControlMode mode = main_get_control_mode();
-  if (mode != ControlModeSlotSelect) return;
-
-  int16_t item_height = 30;
-  int16_t start_y = 15;
-
-  // Title
-  graphics_context_set_text_color(ctx, GColorWhite);
-  GRect title_rect = GRect(0, start_y, bounds.size.w, 25);
-  graphics_draw_text(ctx, "SAVED TIMERS", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-                     title_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-
-  start_y += 30;
 
   // Count filled slots
   int filled_count = 0;
@@ -438,58 +436,32 @@ static void prv_render_slot_menu(GContext *ctx, GRect bounds) {
     }
   }
 
-  // Draw filled slots
-  int row = 0;
-  for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
-    if (timer_slots_data.slots[i].length_ms > 0) {
-      GRect item_rect = GRect(15, start_y + row * item_height, bounds.size.w - 30, item_height - 2);
+  char item_text[20];
 
-      // Highlight selected slot
-      if (row == timer_slots_data.selected_slot) {
-        graphics_context_set_fill_color(ctx, GColorWhite);
-        graphics_fill_rect(ctx, item_rect, 3, GCornersAll);
-        graphics_context_set_text_color(ctx, GColorBlack);
-      } else {
-        graphics_context_set_text_color(ctx, GColorWhite);
-      }
-
-      // Format slot text
-      char slot_text[20];
-      int64_t ms = timer_slots_data.slots[i].length_ms;
-      int min = (ms / MSEC_IN_MIN) % 60;
-      int sec = (ms / MSEC_IN_SEC) % 60;
-      int hr = ms / MSEC_IN_HR;
-      if (hr > 0) {
-        snprintf(slot_text, sizeof(slot_text), "%d:%02d:%02d", hr, min, sec);
-      } else {
-        snprintf(slot_text, sizeof(slot_text), "%02d:%02d", min, sec);
-      }
-
-      GRect text_rect = GRect(item_rect.origin.x + 5, item_rect.origin.y + 3,
-                              item_rect.size.w - 10, item_rect.size.h);
-      graphics_draw_text(ctx, slot_text, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-                         text_rect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-      row++;
-    }
+  // Draw item ABOVE selection (if exists)
+  if (prv_get_menu_item_text(selection - 1, item_text, sizeof(item_text), filled_count)) {
+    GRect above_rect = GRect(center_x - 50, center_y - 50, 100, 25);
+    graphics_context_set_text_color(ctx, GColorDarkGray);
+    graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                       above_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
 
-  // Draw "+ Add New" if there's room
-  if (filled_count < TIMER_SLOT_COUNT) {
-    GRect item_rect = GRect(15, start_y + row * item_height, bounds.size.w - 30, item_height - 2);
+  // Draw SELECTED item in center (highlighted)
+  if (prv_get_menu_item_text(selection, item_text, sizeof(item_text), filled_count)) {
+    GRect center_rect = GRect(center_x - 55, center_y - 18, 110, 36);
+    graphics_context_set_fill_color(ctx, drawing_data.ring_color);
+    graphics_fill_rect(ctx, center_rect, 4, GCornersAll);
+    graphics_context_set_text_color(ctx, GColorBlack);
+    graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
+                       center_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
 
-    // Highlight if selected
-    if (row == timer_slots_data.selected_slot) {
-      graphics_context_set_fill_color(ctx, GColorWhite);
-      graphics_fill_rect(ctx, item_rect, 3, GCornersAll);
-      graphics_context_set_text_color(ctx, GColorBlack);
-    } else {
-      graphics_context_set_text_color(ctx, GColorWhite);
-    }
-
-    GRect text_rect = GRect(item_rect.origin.x + 5, item_rect.origin.y + 3,
-                            item_rect.size.w - 10, item_rect.size.h);
-    graphics_draw_text(ctx, "+ Add New", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
-                       text_rect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  // Draw item BELOW selection (if exists)
+  if (prv_get_menu_item_text(selection + 1, item_text, sizeof(item_text), filled_count)) {
+    GRect below_rect = GRect(center_x - 50, center_y + 28, 100, 25);
+    graphics_context_set_text_color(ctx, GColorDarkGray);
+    graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
+                       below_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
 }
 
@@ -572,28 +544,19 @@ static void prv_render_pomodoro_indicator(GContext *ctx, GRect bounds) {
 void drawing_render(Layer *layer, GContext *ctx) {
   // get properties
   GRect bounds = layer_get_bounds(layer);
-
-  // Check if we're in a menu mode
   ControlMode mode = main_get_control_mode();
-  if (mode == ControlModeSetupMenu ||
-      mode == ControlModeSlotSelect ||
-      mode == ControlModePomodoroMenu ||
+
+  // Check if we're in pomodoro menu mode (still uses black background)
+  if (mode == ControlModePomodoroMenu ||
       mode == ControlModePomodoroEditWork ||
       mode == ControlModePomodoroEditBreak) {
-    // Draw black background for menus
     graphics_context_set_fill_color(ctx, GColorBlack);
     graphics_fill_rect(ctx, bounds, 0, GCornerNone);
-
-    // Render the appropriate menu
-    prv_render_setup_menu(ctx, bounds);
-    prv_render_slot_menu(ctx, bounds);
     prv_render_pomodoro_menu(ctx, bounds);
     return;
   }
 
-  // Normal timer rendering
-  // draw background
-  // this is actually the ring, which is then covered up with the background
+  // Draw the circular background for normal mode and setup menu
   graphics_context_set_fill_color(ctx, drawing_data.ring_color);
 #ifdef PBL_BW
   graphics_fill_rect_grey(ctx, bounds);
@@ -604,6 +567,14 @@ void drawing_render(Layer *layer, GContext *ctx) {
   // draw main circle
   graphics_context_set_fill_color(ctx, drawing_data.mid_color);
   graphics_fill_circle(ctx, grect_center_point(&bounds), CIRCLE_RADIUS);
+
+  // If in setup menu, render menu content instead of timer
+  if (mode == ControlModeSetupMenu) {
+    prv_render_setup_menu(ctx, bounds);
+    return;
+  }
+
+  // Normal timer rendering
   // draw focus layer
   prv_render_focus_layer(ctx);
   // draw main text (drawn as filled and stroked path)

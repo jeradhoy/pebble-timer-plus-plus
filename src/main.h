@@ -28,17 +28,10 @@ typedef enum {
   ControlModePomodoroEditBreak  // Editing pomodoro break time
 } ControlMode;
 
-// Setup menu position
-typedef enum {
-  SetupPositionCenter,    // Default - reset option
-  SetupPositionPomodoro,  // UP - Pomodoro settings
-  SetupPositionSlots      // DOWN - Stored timer slots
-} SetupPosition;
-
 //! Get the current control mode of the app
 //! @return The current ControlMode
 ControlMode main_get_control_mode(void);
 
-//! Get the current setup position
-//! @return The current SetupPosition
-SetupPosition main_get_setup_position(void);
+//! Get the current setup menu selection index
+//! 0 = Reset, 1-N = saved timers, N+1 = Add New
+int8_t main_get_setup_selection(void);

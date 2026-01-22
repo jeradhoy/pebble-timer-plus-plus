@@ -21,7 +21,7 @@ static struct {
   Window      *window;        //< The base window for the application
   Layer       *layer;         //< The base layer on which everything will be drawn
   ControlMode control_mode;   //< The current control mode of the timer
-  SetupPosition setup_position; //< Current position in setup menu
+  int8_t      setup_selection; //< Current selection in setup menu (0=Reset, 1-N=timers, N+1=Add)
   AppTimer    *app_timer;     //< The AppTimer to keep the screen refreshing
 } main_data;
 
@@ -99,9 +99,9 @@ ControlMode main_get_control_mode(void) {
   return main_data.control_mode;
 }
 
-// Get the current setup position
-SetupPosition main_get_setup_position(void) {
-  return main_data.setup_position;
+// Get the current setup menu selection
+int8_t main_get_setup_selection(void) {
+  return main_data.setup_selection;
 }
 
 // Background layer update procedure
@@ -144,27 +144,15 @@ static void prv_back_click_handler(ClickRecognizerRef recognizer, void *ctx) {
 
 // Up click handler
 static void prv_up_click_handler(ClickRecognizerRef recognizer, void *ctx) {
-  // Handle setup menu navigation
+  // Handle setup menu navigation (unified: Reset + saved timers + Add New)
   if (main_data.control_mode == ControlModeSetupMenu) {
-    if (main_data.setup_position == SetupPositionCenter) {
-      main_data.setup_position = SetupPositionPomodoro;
-    } else if (main_data.setup_position == SetupPositionSlots) {
-      main_data.setup_position = SetupPositionCenter;
-    }
-    // Pomodoro stays at Pomodoro (top)
-    drawing_update();
-    layer_mark_dirty(main_data.layer);
-    return;
-  }
-
-  // Handle slot selection - move up through slots
-  if (main_data.control_mode == ControlModeSlotSelect) {
     uint8_t filled = prv_count_filled_slots();
-    uint8_t max_selection = (filled < TIMER_SLOT_COUNT) ? filled : filled - 1;  // filled slots + Add New (if room)
-    if (timer_slots_data.selected_slot > 0) {
-      timer_slots_data.selected_slot--;
+    // Max selection: 0=Reset, 1-N=timers, N+1=AddNew (if room)
+    uint8_t max_selection = filled + ((filled < TIMER_SLOT_COUNT) ? 1 : 0);
+    if (main_data.setup_selection > 0) {
+      main_data.setup_selection--;
     } else {
-      timer_slots_data.selected_slot = max_selection;  // Wrap to bottom
+      main_data.setup_selection = max_selection;  // Wrap to bottom
     }
     drawing_update();
     layer_mark_dirty(main_data.layer);
@@ -233,46 +221,35 @@ static void prv_up_click_handler(ClickRecognizerRef recognizer, void *ctx) {
 
 // Select click handler
 static void prv_select_click_handler(ClickRecognizerRef recognizer, void *ctx) {
-  // Handle setup menu selection
+  // Handle unified setup menu selection
   if (main_data.control_mode == ControlModeSetupMenu) {
-    switch (main_data.setup_position) {
-      case SetupPositionCenter:
-        // Reset timer
-        prv_perform_reset();
-        return;
-      case SetupPositionPomodoro:
-        // Enter pomodoro menu
-        main_data.control_mode = ControlModePomodoroMenu;
-        drawing_update();
-        layer_mark_dirty(main_data.layer);
-        return;
-      case SetupPositionSlots:
-        // Enter slot selection
-        main_data.control_mode = ControlModeSlotSelect;
-        drawing_update();
-        layer_mark_dirty(main_data.layer);
-        return;
-    }
-  }
+    uint8_t filled = prv_count_filled_slots();
 
-  // Handle slot selection
-  if (main_data.control_mode == ControlModeSlotSelect) {
-    int8_t slot_index = prv_get_slot_index_for_selection(timer_slots_data.selected_slot);
-    if (slot_index >= 0) {
-      // Selected an existing timer - load it
-      timer_slots_load(slot_index);
-      main_data.control_mode = ControlModeEditMin;  // Go to edit mode, not running
+    if (main_data.setup_selection == 0) {
+      // Reset selected
+      prv_perform_reset();
+      return;
+    } else if (main_data.setup_selection <= filled) {
+      // A saved timer is selected - load it
+      int8_t slot_index = prv_get_slot_index_for_selection(main_data.setup_selection - 1);
+      if (slot_index >= 0) {
+        timer_slots_load(slot_index);
+      }
+      main_data.control_mode = ControlModeEditMin;
+      drawing_update();
+      layer_mark_dirty(main_data.layer);
+      return;
     } else {
-      // Selected "+ Add New" - save current timer to first empty slot
+      // "+ Add New" selected - save current timer
       int8_t empty_slot = prv_get_first_empty_slot();
       if (empty_slot >= 0) {
         timer_slots_save_current(empty_slot);
       }
-      main_data.control_mode = ControlModeEditMin;  // Return to edit mode
+      main_data.control_mode = ControlModeEditMin;
+      drawing_update();
+      layer_mark_dirty(main_data.layer);
+      return;
     }
-    drawing_update();
-    layer_mark_dirty(main_data.layer);
-    return;
   }
 
   // Handle pomodoro menu - start pomodoro or switch editing
@@ -364,34 +341,22 @@ static void prv_select_long_click_handler(ClickRecognizerRef recognizer, void *c
 
   // Otherwise (editing/paused), enter setup menu
   main_data.control_mode = ControlModeSetupMenu;
-  main_data.setup_position = SetupPositionCenter;
+  main_data.setup_selection = 0;  // Start at Reset
   drawing_update();
   layer_mark_dirty(main_data.layer);
 }
 
 // Down click handler
 static void prv_down_click_handler(ClickRecognizerRef recognizer, void *ctx) {
-  // Handle setup menu navigation
+  // Handle setup menu navigation (unified: Reset + saved timers + Add New)
   if (main_data.control_mode == ControlModeSetupMenu) {
-    if (main_data.setup_position == SetupPositionCenter) {
-      main_data.setup_position = SetupPositionSlots;
-    } else if (main_data.setup_position == SetupPositionPomodoro) {
-      main_data.setup_position = SetupPositionCenter;
-    }
-    // Slots stays at Slots (bottom)
-    drawing_update();
-    layer_mark_dirty(main_data.layer);
-    return;
-  }
-
-  // Handle slot selection - move down through slots
-  if (main_data.control_mode == ControlModeSlotSelect) {
     uint8_t filled = prv_count_filled_slots();
-    uint8_t max_selection = (filled < TIMER_SLOT_COUNT) ? filled : filled - 1;  // filled slots + Add New (if room)
-    if (timer_slots_data.selected_slot < max_selection) {
-      timer_slots_data.selected_slot++;
+    // Max selection: 0=Reset, 1-N=timers, N+1=AddNew (if room)
+    uint8_t max_selection = filled + ((filled < TIMER_SLOT_COUNT) ? 1 : 0);
+    if (main_data.setup_selection < max_selection) {
+      main_data.setup_selection++;
     } else {
-      timer_slots_data.selected_slot = 0;  // Wrap to top
+      main_data.setup_selection = 0;  // Wrap to top
     }
     drawing_update();
     layer_mark_dirty(main_data.layer);
@@ -508,7 +473,7 @@ static void prv_initialize(void) {
   } else {
     main_data.control_mode = ControlModeCounting;
   }
-  main_data.setup_position = SetupPositionCenter;
+  main_data.setup_selection = 0;
 
   // initialize window
   main_data.window = window_create();
