@@ -98,6 +98,22 @@ void timer_check_elapsed(void) {
       vibes_long_pulse();
       return;
     }
+    // Check for repeat timer setting (non-pomodoro)
+    if (timer_data.repeat_enabled && timer_data.base_length_ms > 0) {
+      // Three long vibrations
+      static const uint32_t repeat_vibe[] = {400, 200, 400, 200, 400};
+      static const VibePattern repeat_pattern = {
+        .durations = repeat_vibe,
+        .num_segments = 5,
+      };
+      vibes_enqueue_custom_pattern(repeat_pattern);
+      // Restart timer immediately
+      timer_data.length_ms = timer_data.base_length_ms;
+      timer_data.start_ms = epoch();
+      timer_data.can_vibrate = true;
+      timer_data.auto_snooze_count = 0;
+      return;
+    }
     if (timer_data.is_repeating && timer_data.repeat_count > 1) {
       timer_data.repeat_count--;
       timer_increment(timer_data.base_length_ms);

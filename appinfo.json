@@ -1,9 +1,9 @@
 {
-  "uuid": "17bf83aa-88a9-459a-a6e5-60aa60e1dc07",
+  "uuid": "db19f5f2-d3f7-40b1-afca-ada2588a5c16",
   "shortName": "Timer++",
   "longName": "Timer++",
   "companyName": "Jerad Hoy",
-  "versionLabel": "4.2",
+  "versionLabel": "5.0",
   "sdkVersion": "3",
   "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
   "watchapp": {

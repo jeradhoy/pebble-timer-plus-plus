@@ -15,6 +15,7 @@
 
 // Main constants
 #define BUTTON_HOLD_REPEAT_MS 100
+#define LONG_PRESS_REPEAT_THRESHOLD 7  // Repeats before pomodoro phase skip (~700ms)
 
 // Main data structure
 static struct {
@@ -25,6 +26,8 @@ static struct {
   AppTimer    *app_timer;     //< The AppTimer to keep the screen refreshing
   int64_t     temp_pomodoro_work;  //< Temporary work time during pomodoro creation
   int64_t     temp_pomodoro_break; //< Temporary break time during pomodoro creation
+  uint8_t     up_repeat_count;    //< Count of up button repeats for long press detection
+  uint8_t     down_repeat_count;  //< Count of down button repeats for long press detection
 } main_data;
 
 // Function declarations
@@ -267,13 +270,43 @@ static void prv_back_click_handler(ClickRecognizerRef recognizer, void *ctx) {
 
 // Up click handler
 static void prv_up_click_handler(ClickRecognizerRef recognizer, void *ctx) {
+  // Track repeat count for long press detection
+  if (click_recognizer_is_repeating(recognizer)) {
+    main_data.up_repeat_count++;
+  } else {
+    main_data.up_repeat_count = 0;
+  }
+
+  // Check for pomodoro phase skip on long press
+  if (main_data.up_repeat_count == LONG_PRESS_REPEAT_THRESHOLD &&
+      pomodoro_data.is_active &&
+      (main_data.control_mode == ControlModeCounting ||
+       main_data.control_mode == ControlModeEditHr ||
+       main_data.control_mode == ControlModeEditMin ||
+       main_data.control_mode == ControlModeEditSec)) {
+    pomodoro_skip_to_previous();
+    // Keep paused if was paused
+    if (main_data.control_mode != ControlModeCounting) {
+      timer_data.start_ms = 0;
+    }
+    vibes_short_pulse();
+    drawing_update();
+    layer_mark_dirty(main_data.layer);
+    return;
+  }
+
+  // After phase skip triggered, ignore further repeats
+  if (main_data.up_repeat_count > LONG_PRESS_REPEAT_THRESHOLD && pomodoro_data.is_active) {
+    return;
+  }
+
   // Handle setup menu navigation
-  // Menu structure: negative=pomodoro section, 0=Reset, positive=timer section
+  // Menu structure: negative=pomodoro section, 0=Reset, positive=timer section, then Repeat toggle
   if (main_data.control_mode == ControlModeSetupMenu) {
     uint8_t filled_timers = prv_count_filled_slots();
     uint8_t filled_pomodoros = pomodoro_slots_count_filled();
-    // Timer section max: filled timers + Add New (if room)
-    int8_t max_timer_selection = filled_timers + ((filled_timers < TIMER_SLOT_COUNT) ? 1 : 0);
+    // Timer section max: filled timers + Add New (if room) + Repeat toggle
+    int8_t max_timer_selection = filled_timers + ((filled_timers < TIMER_SLOT_COUNT) ? 1 : 0) + 1;
     // Pomodoro section min: -(filled pomodoros + Add New if room)
     int8_t min_pomodoro_selection = -(filled_pomodoros + ((filled_pomodoros < POMODORO_SLOT_COUNT) ? 1 : 0));
 
@@ -408,10 +441,19 @@ static void prv_select_click_handler(ClickRecognizerRef recognizer, void *ctx) {
   if (main_data.control_mode == ControlModeSetupMenu) {
     uint8_t filled_timers = prv_count_filled_slots();
     uint8_t filled_pomodoros = pomodoro_slots_count_filled();
+    bool has_add_timer = (filled_timers < TIMER_SLOT_COUNT);
+    int8_t repeat_toggle_index = filled_timers + (has_add_timer ? 1 : 0) + 1;
 
     if (main_data.setup_selection == 0) {
       // Reset selected
       prv_perform_reset();
+      return;
+    } else if (main_data.setup_selection == repeat_toggle_index) {
+      // Repeat toggle selected - toggle the setting
+      timer_data.repeat_enabled = !timer_data.repeat_enabled;
+      vibes_short_pulse();  // Haptic feedback
+      drawing_update();
+      layer_mark_dirty(main_data.layer);
       return;
     } else if (main_data.setup_selection > 0) {
       // Timer section (positive indices)
@@ -422,7 +464,7 @@ static void prv_select_click_handler(ClickRecognizerRef recognizer, void *ctx) {
           timer_slots_load(slot_index);
         }
         main_data.control_mode = ControlModeEditMin;
-      } else {
+      } else if (has_add_timer && main_data.setup_selection == filled_timers + 1) {
         // "+ Add New" timer selected - save current timer
         int8_t empty_slot = prv_get_first_empty_slot();
         if (empty_slot >= 0) {
@@ -692,13 +734,43 @@ static void prv_select_long_click_handler(ClickRecognizerRef recognizer, void *c
 
 // Down click handler
 static void prv_down_click_handler(ClickRecognizerRef recognizer, void *ctx) {
+  // Track repeat count for long press detection
+  if (click_recognizer_is_repeating(recognizer)) {
+    main_data.down_repeat_count++;
+  } else {
+    main_data.down_repeat_count = 0;
+  }
+
+  // Check for pomodoro phase skip on long press
+  if (main_data.down_repeat_count == LONG_PRESS_REPEAT_THRESHOLD &&
+      pomodoro_data.is_active &&
+      (main_data.control_mode == ControlModeCounting ||
+       main_data.control_mode == ControlModeEditHr ||
+       main_data.control_mode == ControlModeEditMin ||
+       main_data.control_mode == ControlModeEditSec)) {
+    pomodoro_skip_to_next();
+    // Keep paused if was paused
+    if (main_data.control_mode != ControlModeCounting) {
+      timer_data.start_ms = 0;
+    }
+    vibes_short_pulse();
+    drawing_update();
+    layer_mark_dirty(main_data.layer);
+    return;
+  }
+
+  // After phase skip triggered, ignore further repeats
+  if (main_data.down_repeat_count > LONG_PRESS_REPEAT_THRESHOLD && pomodoro_data.is_active) {
+    return;
+  }
+
   // Handle setup menu navigation
-  // Menu structure: negative=pomodoro section, 0=Reset, positive=timer section
+  // Menu structure: negative=pomodoro section, 0=Reset, positive=timer section, then Repeat toggle
   if (main_data.control_mode == ControlModeSetupMenu) {
     uint8_t filled_timers = prv_count_filled_slots();
     uint8_t filled_pomodoros = pomodoro_slots_count_filled();
-    // Timer section max: filled timers + Add New (if room)
-    int8_t max_timer_selection = filled_timers + ((filled_timers < TIMER_SLOT_COUNT) ? 1 : 0);
+    // Timer section max: filled timers + Add New (if room) + Repeat toggle
+    int8_t max_timer_selection = filled_timers + ((filled_timers < TIMER_SLOT_COUNT) ? 1 : 0) + 1;
     // Pomodoro section min: -(filled pomodoros + Add New if room)
     int8_t min_pomodoro_selection = -(filled_pomodoros + ((filled_pomodoros < POMODORO_SLOT_COUNT) ? 1 : 0));
 
@@ -814,57 +886,17 @@ static void prv_down_click_handler(ClickRecognizerRef recognizer, void *ctx) {
   layer_mark_dirty(main_data.layer);
 }
 
-// Up long click handler - skip to previous pomodoro phase
-static void prv_up_long_click_handler(ClickRecognizerRef recognizer, void *ctx) {
-  // Handle when in pomodoro mode (running or paused)
-  if (pomodoro_data.is_active &&
-      (main_data.control_mode == ControlModeCounting ||
-       main_data.control_mode == ControlModeEditHr ||
-       main_data.control_mode == ControlModeEditMin ||
-       main_data.control_mode == ControlModeEditSec)) {
-    pomodoro_skip_to_previous();
-    // Keep paused if was paused
-    if (main_data.control_mode != ControlModeCounting) {
-      timer_data.start_ms = 0;
-    }
-    vibes_short_pulse();
-    drawing_update();
-    layer_mark_dirty(main_data.layer);
-  }
-}
-
-// Down long click handler - skip to next pomodoro phase
-static void prv_down_long_click_handler(ClickRecognizerRef recognizer, void *ctx) {
-  // Handle when in pomodoro mode (running or paused)
-  if (pomodoro_data.is_active &&
-      (main_data.control_mode == ControlModeCounting ||
-       main_data.control_mode == ControlModeEditHr ||
-       main_data.control_mode == ControlModeEditMin ||
-       main_data.control_mode == ControlModeEditSec)) {
-    pomodoro_skip_to_next();
-    // Keep paused if was paused
-    if (main_data.control_mode != ControlModeCounting) {
-      timer_data.start_ms = 0;
-    }
-    vibes_short_pulse();
-    drawing_update();
-    layer_mark_dirty(main_data.layer);
-  }
-}
-
 // Click configuration provider
 static void prv_click_config_provider(void *ctx) {
   window_single_click_subscribe(BUTTON_ID_BACK, prv_back_click_handler);
   window_single_repeating_click_subscribe(BUTTON_ID_UP, BUTTON_HOLD_REPEAT_MS,
     prv_up_click_handler);
-  window_long_click_subscribe(BUTTON_ID_UP, BUTTON_HOLD_RESET_MS, prv_up_long_click_handler, NULL);
   window_single_click_subscribe(BUTTON_ID_SELECT, prv_select_click_handler);
   window_raw_click_subscribe(BUTTON_ID_SELECT, prv_select_raw_click_handler, NULL, NULL);
   window_long_click_subscribe(BUTTON_ID_SELECT, BUTTON_HOLD_RESET_MS, prv_select_long_click_handler,
     NULL);
   window_single_repeating_click_subscribe(BUTTON_ID_DOWN, BUTTON_HOLD_REPEAT_MS,
     prv_down_click_handler);
-  window_long_click_subscribe(BUTTON_ID_DOWN, BUTTON_HOLD_RESET_MS, prv_down_long_click_handler, NULL);
 }
 
 // AppTimer callback

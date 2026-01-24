@@ -461,7 +461,8 @@ static bool prv_get_menu_item_text(int8_t index, char *buffer, size_t buf_size) 
   bool has_add_timer = (filled_timers < TIMER_SLOT_COUNT);
   bool has_add_pomodoro = (filled_pomodoros < POMODORO_SLOT_COUNT);
 
-  int8_t max_timer_index = filled_timers + (has_add_timer ? 1 : 0);
+  // +1 for Repeat toggle at the end
+  int8_t max_timer_index = filled_timers + (has_add_timer ? 1 : 0) + 1;
   int8_t min_pomodoro_index = -(filled_pomodoros + (has_add_pomodoro ? 1 : 0));
 
   // Check bounds
@@ -494,8 +495,12 @@ static bool prv_get_menu_item_text(int8_t index, char *buffer, size_t buf_size) 
           }
         }
       }
-    } else if (has_add_timer) {
+    } else if (has_add_timer && index == filled_timers + 1) {
       snprintf(buffer, buf_size, "+ Save Timer");
+      return true;
+    } else if (index == max_timer_index) {
+      // Repeat toggle is always the last item
+      snprintf(buffer, buf_size, "Repeat: %s", timer_data.repeat_enabled ? "On" : "Off");
       return true;
     }
   } else {
@@ -615,7 +620,7 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
 
   // Draw item ABOVE selection (if exists)
   if (prv_get_menu_item_text(selection - 1, item_text, sizeof(item_text))) {
-    GRect above_rect = GRect(center_x - 50, center_y - 46 + scroll_offset, 100, 16);
+    GRect above_rect = GRect(center_x - 50, center_y - 42 + scroll_offset, 100, 12);
     if (prv_is_pomodoro_format(item_text)) {
       prv_draw_pomodoro_time(ctx, item_text, above_rect, true);
     } else if (prv_is_leco_compatible(item_text)) {
@@ -659,7 +664,7 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
 
   // Draw item BELOW selection (if exists)
   if (prv_get_menu_item_text(selection + 1, item_text, sizeof(item_text))) {
-    GRect below_rect = GRect(center_x - 50, center_y + 32 + scroll_offset, 100, 16);
+    GRect below_rect = GRect(center_x - 50, center_y + 32 + scroll_offset, 100, 12);
     if (prv_is_pomodoro_format(item_text)) {
       prv_draw_pomodoro_time(ctx, item_text, below_rect, true);
     } else if (prv_is_leco_compatible(item_text)) {
@@ -675,20 +680,20 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
   }
 
   // Show "Hold to Delete" help text if a deletable item is selected
-  uint8_t filled_timers = 0;
+  int filled_timers = 0;
   for (int i = 0; i < TIMER_SLOT_COUNT; i++) {
     if (timer_slots_data.slots[i].length_ms > 0) filled_timers++;
   }
-  uint8_t filled_pomodoros = pomodoro_slots_count_filled();
+  int filled_pomodoros = (int)pomodoro_slots_count_filled();
 
   bool is_deletable = false;
   // Check if saved timer (positive index within filled range)
-  if (selection >= 1 && selection <= filled_timers) {
+  if ((int)selection >= 1 && (int)selection <= filled_timers) {
     is_deletable = true;
   }
   // Check if saved pomodoro (negative index within filled range)
   if (selection < 0) {
-    int8_t pomo_index = -selection - 1;
+    int pomo_index = -selection - 1;
     if (pomo_index < filled_pomodoros) {
       is_deletable = true;
     }
@@ -743,8 +748,8 @@ static void prv_render_pomodoro_create(GContext *ctx, GRect bounds) {
 
   bool editing_work = prv_is_pomodoro_work_create_mode(mode);
 
-  // Draw header (WORK or BREAK)
-  const char *header = editing_work ? "WORK" : "BREAK";
+  // Draw header (Work or Break)
+  const char *header = editing_work ? "Work" : "Break";
   GRect header_rect = GRect(center_x - 50, center_y - CIRCLE_RADIUS + 10, 100, 25);
   graphics_context_set_text_color(ctx, drawing_data.fore_color);
   graphics_draw_text(ctx, header, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
