@@ -320,9 +320,13 @@ static void prv_render_progress_ring(GContext *ctx, GRect bounds) {
 // Update the progress ring position based on the current and total values
 static void prv_progress_ring_update(void) {
   // calculate new angle
-  int32_t new_angle = TRIG_MAX_ANGLE * timer_get_value_ms() / timer_get_length_ms();
+  int32_t new_angle;
   if (timer_is_chrono()) {
     new_angle = TRIG_MAX_ANGLE * (timer_get_value_ms() % MSEC_IN_MIN) / MSEC_IN_MIN;
+  } else if (timer_get_length_ms() > 0) {
+    new_angle = TRIG_MAX_ANGLE * timer_get_value_ms() / timer_get_length_ms();
+  } else {
+    new_angle = 0;
   }
   // check if large angle and animate
   animation_stop(&drawing_data.progress_angle);
