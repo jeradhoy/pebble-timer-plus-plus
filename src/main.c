@@ -12,6 +12,7 @@
 #include "drawing.h"
 #include "timer.h"
 #include "utility.h"
+#include <stdlib.h>
 
 // Main constants
 #define BUTTON_HOLD_REPEAT_MS 100
@@ -125,9 +126,9 @@ static void prv_get_time_parts_from_ms(int64_t ms, uint16_t *hr, uint16_t *min, 
 static void prv_increment_pomodoro_time(int64_t *time_ms, int64_t increment) {
   // Determine interval for wrapping
   int64_t interval;
-  if (labs(increment) >= MSEC_IN_HR) {
+  if (llabs(increment) >= MSEC_IN_HR) {
     interval = 100 * MSEC_IN_HR;  // Max 99 hours
-  } else if (labs(increment) >= MSEC_IN_MIN) {
+  } else if (llabs(increment) >= MSEC_IN_MIN) {
     interval = MSEC_IN_HR;
   } else {
     interval = MSEC_IN_MIN;

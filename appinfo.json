@@ -5,7 +5,7 @@
   "companyName": "Jerad Hoy",
   "versionLabel": "5.0",
   "sdkVersion": "3",
-  "targetPlatforms": ["aplite", "basalt", "chalk", "diorite"],
+  "targetPlatforms": ["aplite", "basalt", "chalk", "diorite", "emery"],
   "watchapp": {
     "watchface": false
   },

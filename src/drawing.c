@@ -584,7 +584,7 @@ static void prv_draw_pomodoro_time(GContext *ctx, const char *str, GRect bounds,
   int16_t start_x = bounds.origin.x + (bounds.size.w - total_width) / 2;
   int16_t x_pos = start_x;
 
-  GColor color = dimmed ? GColorDarkGray : drawing_data.fore_color;
+  GColor color = dimmed ? PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack) : drawing_data.fore_color;
 
   // Draw work time with LECO
   GRect work_rect = GRect(x_pos, bounds.origin.y, work_bounds.size.w, bounds.size.h);
@@ -624,12 +624,13 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
     if (prv_is_pomodoro_format(item_text)) {
       prv_draw_pomodoro_time(ctx, item_text, above_rect, true);
     } else if (prv_is_leco_compatible(item_text)) {
-      graphics_context_set_stroke_color(ctx, GColorDarkGray);
-      graphics_context_set_fill_color(ctx, GColorDarkGray);
+      GColor dimmed_color = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack);
+      graphics_context_set_stroke_color(ctx, dimmed_color);
+      graphics_context_set_fill_color(ctx, dimmed_color);
       text_render_draw_scalable_text(ctx, item_text, above_rect);
     } else {
       GRect text_rect = GRect(center_x - 50, center_y - 50 + scroll_offset, 100, 25);
-      graphics_context_set_text_color(ctx, GColorDarkGray);
+      graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack));
       graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
                          text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     }
@@ -640,22 +641,34 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
     if (prv_is_pomodoro_format(item_text)) {
       GRect text_rect = GRect(center_x - 55, center_y - 7 + scroll_offset, 110, 16);
       GRect highlight_rect = grect_inset(text_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER));
+#ifdef PBL_BW
+      graphics_fill_rect_grey(ctx, highlight_rect);
+#else
       graphics_context_set_fill_color(ctx, drawing_data.ring_color);
       graphics_fill_rect(ctx, highlight_rect, 0, GCornerNone);
+#endif
       prv_draw_pomodoro_time(ctx, item_text, text_rect, false);
     } else if (prv_is_leco_compatible(item_text)) {
       GRect text_rect = GRect(center_x - 55, center_y - 7 + scroll_offset, 110, 16);
       GRect highlight_rect = grect_inset(text_rect, GEdgeInsets1(-FOCUS_FIELD_BORDER));
+#ifdef PBL_BW
+      graphics_fill_rect_grey(ctx, highlight_rect);
+#else
       graphics_context_set_fill_color(ctx, drawing_data.ring_color);
       graphics_fill_rect(ctx, highlight_rect, 0, GCornerNone);
+#endif
       graphics_context_set_stroke_color(ctx, drawing_data.fore_color);
       graphics_context_set_fill_color(ctx, drawing_data.fore_color);
       text_render_draw_scalable_text(ctx, item_text, text_rect);
     } else {
       GRect text_rect = GRect(center_x - 55, center_y - 14 + scroll_offset, 110, 30);
       GRect highlight_rect = GRect(center_x - 55, center_y - 8 + scroll_offset, 110, 22);
+#ifdef PBL_BW
+      graphics_fill_rect_grey(ctx, highlight_rect);
+#else
       graphics_context_set_fill_color(ctx, drawing_data.ring_color);
       graphics_fill_rect(ctx, highlight_rect, 4, GCornersAll);
+#endif
       graphics_context_set_text_color(ctx, GColorBlack);
       graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
                          text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
@@ -668,12 +681,13 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
     if (prv_is_pomodoro_format(item_text)) {
       prv_draw_pomodoro_time(ctx, item_text, below_rect, true);
     } else if (prv_is_leco_compatible(item_text)) {
-      graphics_context_set_stroke_color(ctx, GColorDarkGray);
-      graphics_context_set_fill_color(ctx, GColorDarkGray);
+      GColor dimmed_color = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack);
+      graphics_context_set_stroke_color(ctx, dimmed_color);
+      graphics_context_set_fill_color(ctx, dimmed_color);
       text_render_draw_scalable_text(ctx, item_text, below_rect);
     } else {
       GRect text_rect = GRect(center_x - 50, center_y + 28 + scroll_offset, 100, 25);
-      graphics_context_set_text_color(ctx, GColorDarkGray);
+      graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack));
       graphics_draw_text(ctx, item_text, fonts_get_system_font(FONT_KEY_GOTHIC_18),
                          text_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     }
@@ -701,7 +715,7 @@ static void prv_render_setup_menu(GContext *ctx, GRect bounds) {
 
   if (is_deletable) {
     GRect help_rect = GRect(0, bounds.size.h - 20, bounds.size.w, 18);
-    graphics_context_set_text_color(ctx, GColorDarkGray);
+    graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack));
     graphics_draw_text(ctx, "Hold to Delete", fonts_get_system_font(FONT_KEY_GOTHIC_14),
                        help_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
@@ -783,8 +797,12 @@ static void prv_render_pomodoro_create(GContext *ctx, GRect bounds) {
   char field_str[4];
 
   // Draw animated focus field first (behind text)
+#ifdef PBL_BW
+  graphics_fill_rect_grey(ctx, drawing_data.pomo_focus_field);
+#else
   graphics_context_set_fill_color(ctx, drawing_data.ring_color);
   graphics_fill_rect(ctx, drawing_data.pomo_focus_field, 0, GCornerNone);
+#endif
 
   // Draw hours if present
   if (hr > 0) {
@@ -830,7 +848,7 @@ static void prv_render_pomodoro_create(GContext *ctx, GRect bounds) {
   char other_str[30];
   snprintf(other_str, sizeof(other_str), "%s %s", other_label, other_time);
   GRect other_rect = GRect(0, center_y + CIRCLE_RADIUS - 40, bounds.size.w, 25);
-  graphics_context_set_text_color(ctx, GColorDarkGray);
+  graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack));
   graphics_draw_text(ctx, other_str, fonts_get_system_font(FONT_KEY_GOTHIC_18),
                      other_rect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 }

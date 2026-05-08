@@ -10,6 +10,7 @@
 
 #include "timer.h"
 #include "utility.h"
+#include <stdlib.h>
 #include <string.h>
 
 #define PERSIST_VERSION 4
@@ -89,24 +90,25 @@ bool timer_is_paused(void) {
   return timer_data.start_ms <= 0;
 }
 
+// Three long vibrations pattern (used for pomodoro and repeat timer)
+static const uint32_t triple_long_vibe[] = {400, 200, 400, 200, 400};
+static const VibePattern triple_long_pattern = {
+  .durations = triple_long_vibe,
+  .num_segments = 5,
+};
+
 // Check if the timer is elapsed and vibrate if this is the first call after elapsing
 void timer_check_elapsed(void) {
   if (timer_is_chrono() && !timer_is_paused() && timer_data.can_vibrate) {
     // Check for pomodoro mode first
     if (pomodoro_data.is_active) {
       pomodoro_handle_timer_complete();
-      vibes_long_pulse();
+      vibes_enqueue_custom_pattern(triple_long_pattern);
       return;
     }
     // Check for repeat timer setting (non-pomodoro)
     if (timer_data.repeat_enabled && timer_data.base_length_ms > 0) {
-      // Three long vibrations
-      static const uint32_t repeat_vibe[] = {400, 200, 400, 200, 400};
-      static const VibePattern repeat_pattern = {
-        .durations = repeat_vibe,
-        .num_segments = 5,
-      };
-      vibes_enqueue_custom_pattern(repeat_pattern);
+      vibes_enqueue_custom_pattern(triple_long_pattern);
       // Restart timer immediately
       timer_data.length_ms = timer_data.base_length_ms;
       timer_data.start_ms = epoch();
@@ -143,9 +145,9 @@ void timer_increment(int64_t increment) {
   }
   // identify increment class
   int64_t interval;
-  if (abs(increment) < MSEC_IN_MIN) {
+  if (llabs(increment) < MSEC_IN_MIN) {
     interval = MSEC_IN_MIN;
-  } else if (abs(increment) < MSEC_IN_HR) {
+  } else if (llabs(increment) < MSEC_IN_HR) {
     interval = MSEC_IN_HR;
   } else {
     interval = MSEC_IN_HR * 100;
