@@ -1,0 +1,63 @@
+{
+  "name": "pebble-timer-plus-plus",
+  "author": "Jerad Hoy",
+  "version": "5.0.0",
+  "keywords": [
+    "pebble-app"
+  ],
+  "private": true,
+  "dependencies": {
+    "pebble-scalable": "^2.2.0"
+  },
+  "pebble": {
+    "displayName": "Timer++",
+    "uuid": "db19f5f2-d3f7-40b1-afca-ada2588a5c16",
+    "sdkVersion": "3",
+    "enableMultiJS": false,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "resources": {
+      "media": [
+        {
+          "file": "images/icon_bw.png",
+          "type": "png",
+          "name": "MENU_ICON",
+          "memoryFormat": "1Bit",
+          "menuIcon": true,
+          "targetPlatforms": [
+            "aplite",
+            "diorite",
+            "flint"
+          ]
+        },
+        {
+          "file": "images/icon_color.png",
+          "type": "png",
+          "name": "MENU_ICON",
+          "targetPlatforms": [
+            "basalt",
+            "chalk",
+            "emery",
+            "gabbro"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "BEBAS_FONT_35",
+          "file": "fonts/bebas_neue_regular.ttf",
+          "characterRegex": "[0-9: ]"
+        }
+      ]
+    }
+  }
+}

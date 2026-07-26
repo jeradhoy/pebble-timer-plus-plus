@@ -1,73 +1,60 @@
 # Timer++
 
-A beautiful, feature-rich timer app for Pebble smartwatches with support for countdown timers, stopwatch mode, and Pomodoro technique.
+A feature-rich timer app for Pebble smartwatches with countdown timers, stopwatch mode, saved timers,
+repeat timers, and Pomodoro support.
+
+|                             Aplite                              |                      Basalt                       |                      Chalk                      |                             Diorite                              |                      Emery                      |                             Flint                              |                      Gabbro                       |
+| :-------------------------------------------------------------: | :-----------------------------------------------: | :---------------------------------------------: | :--------------------------------------------------------------: | :---------------------------------------------: | :------------------------------------------------------------: | :-----------------------------------------------: |
+| ![Aplite](assets/screenshots/aplite_diorite_flint_animated.gif) | ![Basalt](assets/screenshots/basalt_animated.gif) | ![Chalk](assets/screenshots/chalk_animated.gif) | ![Diorite](assets/screenshots/aplite_diorite_flint_animated.gif) | ![Emery](assets/screenshots/emery_animated.gif) | ![Flint](assets/screenshots/aplite_diorite_flint_animated.gif) | ![Gabbro](assets/screenshots/gabbro_animated.gif) |
 
 ## Features
 
-### Timer & Stopwatch
-- **Countdown Timer**: Set hours, minutes, and seconds with intuitive controls
-- **Stopwatch Mode**: Start from 0:00 to use as a stopwatch
-- **Background Operation**: Timer runs in the background using WakeUp API - no need to keep the app open
-- **Vibration Alerts**: Get notified when your timer completes
+- Countdown timer with hours, minutes, and seconds.
+- Stopwatch mode when started from `0:00`.
+- Background operation using the WakeUp API.
+- Vibration alerts when timers complete.
+- Up to 5 saved timers for quick access.
+- Repeat timer mode for intervals, meditation, or recurring reminders.
+- Pomodoro mode with customizable work/break durations and saved presets.
+- Phase indicators and long-press phase skipping.
 
-### Stored Timers
-- **Save up to 5 timers** for quick access
-- Long press select to open the settings menu
-- Scroll down to view saved timers or add new ones
-- Long press on a saved timer to delete it
+## Controls
 
-### Repeat Timer
-- **Auto-repeat mode**: Toggle "Repeat: On/Off" in the settings menu
-- When enabled, timers automatically restart after completion
-- Brief vibration (3 pulses) signals each repeat cycle
-- Perfect for interval training, meditation, or any repeating task
-
-### Pomodoro Timer
-- **Built-in Pomodoro support** with customizable work and break durations
-- Save up to 5 Pomodoro configurations (e.g., 25/5, 50/10)
-- **Phase indicators**: Shows current phase (WORK/BREAK) and cycle count
-- **Skip phases**: Long press up/down to skip to previous/next phase
-- Works while timer is running or paused
-
-### Controls
-
-#### Main Screen
-- **Up/Down**: Adjust time (hours/minutes/seconds based on selection)
-- **Select**: Start/pause timer, move between time fields
-- **Long Press Select**: Open settings menu (when paused) or reset timer (when running)
-- **Back**: Exit app (timer continues in background)
-
-#### During Pomodoro
-- **Long Press Up**: Skip to previous phase
-- **Long Press Down**: Skip to next phase
-
-#### Settings Menu
-- **Up/Down**: Navigate menu items
-- **Select**: Choose item (Reset, saved timer, saved pomodoro, or add new)
-- **Long Press**: Delete saved timer/pomodoro
-- **Back**: Return to timer
+- `Up/Down`: Adjust the selected time field.
+- `Select`: Start/pause timer or advance between time fields.
+- `Long Press Select`: Open settings while paused, reset while running, or delete selected saved items in settings.
+- `Back`: Exit the app while leaving active timers running in the background.
+- `Long Press Up/Down`: Skip to previous/next Pomodoro phase.
 
 ## Building
 
 Requires the Pebble SDK.
 
-```bash
+```sh
 pebble build
 pebble install --phone <PHONE_IP>
 ```
+
+### VS Code
+
+To configure Visual Studio Code with formatting and intellisense run the following commands. This
+will need to be repeated any time the build configuration changes.
+
+1. Ensure `bear` is installed: `sudo apt install bear`.
+2. Ensure a clean build so all commands will be captured: `pebble clean`.
+3. Create the build directory: `mkdir -p build`.
+4. Generate the `compile_commands.json` file:
+   `bear --output build/compile_commands.json -- pebble build`.
+5. Run the `Show Recommended Extensions` command and install the suggested extensions.
+6. Run `clangd: Restart language server` for changes to take effect.
 
 ## Credits
 
 Based on [Timer+](https://github.com/YclepticStudios/pebble-timer-plus) by Eric Phillips.
 
-Timer++ modifications by Jerad Hoy, including:
-- Stored timers feature
-- Pomodoro timer support
-- Repeat timer mode
-- Settings menu with animations
-- Phase skip controls
-- UI improvements
+Timer++ modifications by Jerad Hoy include saved timers, Pomodoro support, repeat timers, settings
+menu enhancements, phase skip controls, and Pebble Time 2 support.
 
 ## License
 
-MIT License - See [LICENSE.md](LICENSE.md) for details.
+MIT License. See [LICENSE.md](LICENSE.md) for details.
